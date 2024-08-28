@@ -1,0 +1,57 @@
+\documentclass{article}
+\usepackage[a0paper]{geometry}
+\usepackage{fontspec}
+\setmainfont{texgyrepagella}[
+  Extension = .otf,
+  UprightFont = *-regular,
+  BoldFont = *-bold,
+  ItalicFont = *-italic,
+  BoldItalicFont = *-bolditalic,
+]
+
+
+\begin{document}
+\begin{minipage}{127.85mm}
+	\fontsize{30}{36}\selectfont
+	ARs are identified using the integrated water vapour transport (IVT), which is the product of the specific humidity (q) and the zonal (u) and meridional (v) wind integrated over the troposphere. Grid points with values below the 1979-2020 85th percentile are masked out.
+
+	\vspace{30pt}
+	From the masked IVT field we identify continuous "blobs" of unusually high IVT as the initial AR features. The features are filtered based on their length and width.
+
+	\vspace{30pt}
+	For the remaining features we calculate the centerlines based on following the maximum IVT intensity and its direction, using an approach from Pan and Lu (2019).
+\end{minipage}
+
+\begin{minipage}{375.85mm}
+	\begin{minipage}[t]{182mm}
+		\fontsize{30}{36}\selectfont
+		Atmospheric rivers (ARs) are long (>2000km) and narrow (<1000km) bands of unusually high atmospheric moisture transport. ARs play a critical role in the weather and climate in many parts of the mid- to high-latitudes. However, their role in the Scandinavian climate system is relatively uninvestigated.
+	\end{minipage}%
+	\hfill
+	\begin{minipage}[t]{182mm}
+		\fontsize{30}{36}\selectfont
+		Here, we want to answer two questions:
+		\begin{enumerate}
+			\item How do ARs that pass over Scandinavia vary by season?
+
+			\item How do teleconnections such as the North Atlantic Oscillation (NAO) influence the AR frequency and paths?
+		\end{enumerate}
+	\end{minipage}
+
+\end{minipage}
+
+\vspace{30pt}
+
+\begin{minipage}{397.4mm}
+	\begin{minipage}[t]{192.67mm}
+
+		\fontsize{30}{36}\selectfont
+		Maps (panels a-d) to the left show AR frequencies grouped by season. These show that the AR activity over Scandinavia peaks during June, July, August (JJA, panel c), and September, October, November (SON, panel d). The maximum AR frequency is ~0.1\% of the time steps, equivalent of ~150 time steps. The seasonal frequency difference is further highlighted in the frequency histogram (e). Along with the increased frequencies, there is also a change to the spatial extent in the origins of Scandinavian ARs between the season.
+	\end{minipage}%
+	\hfill
+	\begin{minipage}[t]{192.67mm}
+		\fontsize{30}{36}\selectfont
+		The plots of maximum frequency along the latitude (f) and longitude (g) highlight the spatial variations and how these change with the season.  The maximum frequencies, during all seasons, are found around 55°N and 10°E. Along the latitude, there is a second peak around 65°N during both DJF and MAM which is not present in JJA or SON.
+	\end{minipage}
+\end{minipage}
+\end{document}

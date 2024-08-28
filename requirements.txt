@@ -1,0 +1,15 @@
+matplotlib
+numpy
+dask
+dask-image
+ipykernel
+scipy
+xarray
+pyproj
+scikit-image
+scikit-learn
+cartopy
+geopandas
+numba
+zarr
+netcdf4
