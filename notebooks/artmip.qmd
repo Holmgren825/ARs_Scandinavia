@@ -1,0 +1,478 @@
+---
+title: ARTMIP investigation
+author: Erik Holmgren
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .qmd
+      format_name: quarto
+      format_version: '1.0'
+      jupytext_version: 1.16.2
+  kernelspec:
+    display_name: ar_ident
+    language: python
+    name: ar_ident
+---
+
+```{python}
+import dask.array as da
+import geopandas as gpd
+import numpy as np
+import proplot as pplt
+import xarray as xr
+from cartopy import crs as ccrs
+from dask.distributed import Client
+from shapely.geometry import MultiPoint
+from shapely.ops import unary_union
+```
+
+```{python}
+client = Client()
+```
+
+## ARTMIP data
+
+```{python}
+base_path = "/data/atmospheric_rivers/artmip/"
+```
+
+```{python}
+path_zarr = "/data/atmospheric_rivers/artmip/ERA5.ar_tag.GuanWaliser_v2.1hr.19790101-20191231.zarr"
+```
+
+```{python}
+ds = xr.open_mfdataset(path_zarr, engine="zarr", chunks="auto")
+ds = ds.thin({"time": 6})
+```
+
+```{python}
+ds.ar_binary_tag.sel(time=slice("1979", "1981"))
+```
+
+```{python}
+fig, ax = pplt.subplots(proj="npstere")
+ds.ar_binary_tag.isel(time=5).plot.imshow(ax=ax)
+```
+
+## AR features (Unique ids)
+
+We assign unique IDs to each AR object using the script `get_guan_walliser_ar_ids.py`.
+
+```{python}
+ds_feature = xr.open_mfdataset(
+    "/data/atmospheric_rivers/artmip/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231.zarr",
+    engine="zarr",
+)
+```
+
+```{python}
+fig, ax = pplt.subplots(figheight="10cm", proj="robin")
+ds_feature.ar_feautures.isel(time=-1).plot(ax=ax)
+ax.format(coast=True, reso="med")
+```
+
+## Scandinavian ARs
+
+```{python}
+gdf = gpd.read_file("../etc/ne_110m_admin_0_countries/ne_110m_admin_0_countries.shp")
+```
+
+```{python}
+scand_gdf = gdf[
+    (gdf["ADMIN"] == "Sweden")
+    + (gdf["ADMIN"] == "Norway")
+    + (gdf["ADMIN"] == "Denmark")
+    + (gdf["ADMIN"] == "Finland")
+]
+```
+
+```{python}
+scand_gdf.loc[scand_gdf.index == 21, "geometry"] = (
+    scand_gdf.loc[scand_gdf.index == 21, "geometry"].iloc[0].geoms[1]
+)
+```
+
+```{python}
+fig, ax = pplt.subplot()
+scand_gdf.geometry.plot(ax=ax)
+ax.format()
+```
+
+```{python}
+scand_shape = unary_union(scand_gdf.geometry)
+```
+
+```{python}
+# Create a mask based on the Scandinavian outline.
+x, y = np.meshgrid(ds.lon, ds.lat)
+
+x_flat = x.flatten()
+y_flat = y.flatten()
+
+lon_lat_points = np.vstack([x_flat, y_flat])
+points = MultiPoint(lon_lat_points.T)
+
+indices = [i for i, p in enumerate(points.geoms) if scand_shape.contains(p)]
+
+# Create the mask
+mask = np.ones(ds.ar_binary_tag.shape[1:], dtype=bool)
+# Set values within the specified region to false, e.g. the areas we want to keep.
+mask[np.unravel_index(indices, mask.shape)] = False
+```
+
+```{python}
+mask = xr.DataArray(
+    data=~mask,
+    dims=["lat", "lon"],
+    coords={"lon": ds.lon, "lat": ds.lat},
+)
+```
+
+```{python}
+fig, ax = pplt.subplots()
+mask.plot(ax=ax);
+```
+
+### Select the IDs that intersect the mask.
+
+```{python}
+ids = da.unique(ds_feature.ar_feautures.where(mask, np.nan).data)
+```
+
+```{python}
+ids = ids.compute()
+```
+
+```{python}
+mask_isin = da.isin(ds_feature.ar_feautures.data, ids[1:-1])
+scand_ars = ds_feature.ar_feautures.where(mask_isin, np.nan)
+```
+
+```{python}
+scand_ars.name = "ar_features"
+```
+
+```{python}
+scand_ars.to_zarr(
+    "/data/atmospheric_rivers/artmip/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231_scandinavia.zarr"
+)
+```
+
+## Load Scandinavian ARs
+
+```{python}
+scand_ars = xr.open_mfdataset(
+    "/data/atmospheric_rivers/artmip/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231_scandinavia.zarr",
+    engine="zarr",
+    chunks="auto",
+)
+```
+
+```{python}
+scand_ars.ar_features
+```
+
+```{python}
+fig, ax = pplt.subplots(proj="robin")
+scand_ars.ar_features.isel(time=-1).plot()
+```
+
+### Annual frequencies
+
+```{python}
+def calc_ar_freqs(ds):
+    freqs = da.nansum(da.where(ds > 0, 1, np.nan), axis=0)
+    freqs = xr.DataArray(
+        freqs,
+        coords={"lat": ds.lat, "lon": ds.lon},
+        dims=("lat", "lon"),
+        name="AR frequency",
+    )
+    return freqs
+```
+
+```{python}
+freqs = calc_ar_freqs(scand_ars.ar_features).compute()
+```
+
+```{python}
+n_timesteps = scand_ars.time.shape[0]
+```
+
+```{python}
+fig, ax = pplt.subplots(
+    figwidth="16cm",
+    proj="nsper",
+    proj_kw={"lon_0": 14, "lat_0": 65},
+)
+
+cmap = pplt.Colormap("dusk", left=0.1)
+cm = (freqs / n_timesteps * 100).plot.pcolormesh(ax=ax, cmap=cmap, add_colorbar=False)
+fig.colorbar(cm, label="AR Frequency [%]")
+
+ax.format(coast=True, reso="med", title="Annual AR frequencies over Scandinavia")
+```
+
+### Seasonal AR frequencies
+
+```{python}
+season_freqs = scand_ars.ar_features.groupby("time.season").map(calc_ar_freqs)
+
+season_freqs = season_freqs.compute()
+
+season_freqs.to_netcdf("/data/projects/atmo_rivers_scandinavia/ERA5_6hr_Guan_Waliser_season_freqs.nc")
+```
+
+```{python}
+bins, hist = np.unique(scand_ars.time.dt.season, return_counts=True)
+```
+
+```{python}
+lons = scand_ars.lon
+lats = scand_ars.lat
+
+# season_freqs_rel = season_freqs.rolling(latitude=5, longitude=5, center=True).mean()
+season_freqs_rel = season_freqs / hist.reshape((-1, 1, 1)) * 100
+
+vmax = season_freqs_rel.max().to_numpy()
+vmax = np.round(vmax, 2)
+
+fig, axs = pplt.subplots(
+    nrows=2,
+    ncols=2,
+    figwidth="15cm",
+    proj="nsper",
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    abc=True,
+)
+# Season order is strange in xarray
+seasons = ["DJF", "MAM", "JJA", "SON"]
+cmap = pplt.Colormap("dusk", left=0.1)
+for i, season in enumerate(seasons):
+    freq_field = season_freqs_rel.sel(season=season)
+    freq_field = freq_field.where(freq_field > 0, np.nan)
+
+    cm = axs[i].pcolormesh(
+        x=lons, y=lats, z=freq_field, vmin=0, vmax=vmax, cmap=cmap, rasterized=True
+    )
+
+    axs[i].format(title=f"{season}\nn: {hist[i]}")
+
+fig.colorbar(cm, loc="b", label=f"AR centerline frequency [% timesteps]")
+axs.format(
+    coast=True,
+    reso="med",
+)
+fig.format(suptitle="AR frequencies grouped by season")
+```
+
+```{python}
+pplt.rc.cycle = "538"
+```
+
+```{python}
+intervals = season_freqs.season.to_numpy()
+
+fig, axs = pplt.subplots(
+    nrows=3, figwidth="7.5cm", figheight="20cm", sharex=False, sharey=False, abc=True
+)
+
+# linestyles = ({"c":"C0", "ls": "--"},{"c":"C0", "ls": "-"}, {"c":"C1", "ls": "-"},{"c":"C1", "ls": "--"})
+for i, interval in enumerate(intervals):
+    season_freqs_rel.sel(season=interval).plot.hist(
+        ax=axs[0], filled=False, label=interval, alpha=1, lw=1
+    )
+    axs[1].plotx(
+        lats[::-1],
+        season_freqs_rel.sel(season=interval).max(dim="lon")[::-1],
+        lw=1,
+    )
+    axs[2].plot(
+        season_freqs_rel.sel(season=interval).max(dim="lat"), lw=1, label=interval
+    )
+
+handles, labels = axs[2].get_legend_handles_labels()
+
+axs[0].format(
+    title="Frequency histograms", xlabel="AR frequency [% timesteps]", yscale="log"
+)
+axs[1].format(
+    title="Max frequency per latitude",
+    yscale="mercator",
+    ylim=(45, 75),
+    yformatter="lat",
+    xlabel="AR frequency [% timesteps]",
+    ylabel="Latitude",
+)
+axs[2].format(
+    title="Max frequency per longitude",
+    xlim=(-10, 55),
+    xformatter="lon",
+    xlabel="Longitude",
+    ylabel="AR frequency [% timesteps]",
+)
+
+fig.legend(handles, labels, ncols=2, loc="b", label="Season")
+fig.format(suptitle="AR frequencies grouped by season")
+```
+
+### NAO
+#### Get NAO data into shape
+- Here is the data: https://www.climate.gov/news-features/understanding-climate/climate-variability-north-atlantic-oscillation
+
+```{python}
+import pandas as pd
+```
+
+```{python}
+nao_df = pd.read_csv(
+    "../etc/norm_daily_nao_index_1950_2024.txt",
+    sep="\s+",
+    header=None,
+    names=["year", "month", "day", "nao"],
+    dtype={"year": str, "month": str, "day": str, "nao": float},
+    na_values=-99.0,
+)
+nao_df["time"] = pd.to_datetime(
+    nao_df["year"] + "-" + nao_df["month"] + "-" + nao_df["day"]
+)
+nao_df.index = nao_df.time
+nao_df = nao_df["nao"]
+```
+
+Lets interpolate these.
+
+```{python}
+nao_df = nao_df.interpolate()
+
+# Upsample to 6 hourly for convenience with era5 data.
+nao_df_6h = nao_df.resample("6h").ffill()
+
+first_timestep = scand_ars.time[:1].to_numpy()[0]
+last_timestep = scand_ars.time[-1:].to_numpy()[0]
+
+# What year do we need?
+nao_ar_df = nao_df_6h.loc[first_timestep:last_timestep]
+```
+
+Bins for NAO:
+
+```{python}
+mid = 0.4524
+bins = np.quantile(nao_ar_df, [0, mid / 2, mid, mid + (1 - mid) / 2, 1])
+# bins = np.quantile(nao_ar_df, [0, 0.2, 0.4, 0.6, 0.8, 1])
+bins
+```
+
+#### Groupby NAO
+
+```{python}
+nao_freqs = scand_ars.assign_coords({"nao": ("time", nao_ar_df.to_numpy())})
+
+nao_freqs = nao_freqs.ar_features.groupby_bins("nao", bins).map(calc_ar_freqs)
+
+nao_freqs = nao_freqs.compute()
+
+nao_freqs.to_netcdf("/data/projects/atmo_rivers_scandinavia/ERA5_6hr_Bin_Waliser_nao_freqs.nc")
+```
+
+```{python}
+nao_freqs["nao_bins"] = nao_freqs.nao_bins.astype(str)
+```
+
+```{python}
+hist, _ = np.histogram(nao_ar_df, bins)  # bins=[-3, -1.5, 0, 1.5, 3])
+```
+
+```{python}
+lons = scand_ars.ar_features.lon
+lats = scand_ars.ar_features.lat
+
+intervals = nao_freqs.nao_bins.to_numpy().copy()
+
+# vmax = nao_freqs.max()
+# nao_freqs_rel = nao_freqs.rolling(latitude=5, longitude=5, center=True).mean()
+nao_freqs_rel = nao_freqs / hist.reshape((-1, 1, 1)) * 100
+vmax = nao_freqs_rel.max().to_numpy()
+vmax = np.round(vmax, 2)
+fig, axs = pplt.subplots(
+    nrows=2,
+    ncols=2,
+    figwidth="15cm",
+    proj="nsper",
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    abc=True,
+)
+cmap = pplt.Colormap("dusk", left=0.1)
+for i, interval in enumerate(intervals[[1, 0, 2, 3]]):
+    freq_field = nao_freqs_rel.sel(nao_bins=interval)
+    freq_field = freq_field.where(freq_field > 0, np.nan)
+    cm = axs[i].pcolormesh(
+        x=lons, y=lats, z=freq_field, vmin=0, vmax=vmax, cmap=cmap, rasterized=True
+    )
+
+    interval_str = str(interval)
+    axs[i].format(title=f"Bin: {interval_str}\nn={hist[[1, 0, 2, 3]][i]}")
+
+fig.colorbar(cm, loc="bottom", label=f"AR centerline frequency [% timesteps]")
+axs.format(coast=True, reso="med", leftlabels=("NAO-", "NAO+"))
+
+fig.format(suptitle="AR frequencies grouped by NAO bins")
+```
+
+```{python}
+# fig.savefig("../figures/ar_freq_map_nao_bins.svg", facecolor="none")
+```
+
+```{python}
+intervals = nao_freqs.nao_bins.to_numpy().copy()
+# nao_freqs_rel = nao_freqs
+fig, axs = pplt.subplots(
+    nrows=3, figwidth="7.5cm", figheight="20cm", sharex=False, sharey=False, abc=True
+)
+
+linestyles = (
+    {"c": "C0", "ls": "--"},
+    {"c": "C0", "ls": "-"},
+    {"c": "C1", "ls": "-"},
+    {"c": "C1", "ls": "--"},
+)
+
+for i, (interval, linestyle) in enumerate(zip(intervals, linestyles)):
+    nao_freqs_rel.sel(nao_bins=interval).plot.hist(
+        ax=axs[0], filled=False, label=interval, lw=1
+    )
+    axs[1].plotx(
+        lats[::-1],
+        nao_freqs_rel.sel(nao_bins=interval).max(dim="lon")[::-1],
+        lw=1,
+    )
+    axs[2].plot(
+        nao_freqs_rel.sel(nao_bins=interval).max(dim="lat"), lw=1, label=interval
+    )
+
+handles, labels = axs[2].get_legend_handles_labels()
+
+axs[0].format(
+    title="Frequency histograms", yscale="log", xlabel="AR frequency [% timesteps]"
+)
+axs[1].format(
+    title="Max frequency per latitude",
+    yscale="mercator",
+    ylim=(40, 75),
+    yformatter="lat",
+    xlabel="AR frequency [% timesteps]",
+    ylabel="Latitude",
+)
+axs[2].format(
+    title="Max frequency per longitude",
+    xlim=(-10, 55),
+    xformatter="lon",
+    xlabel="Longitude",
+    ylabel="AR frequency [% timesteps]",
+)
+
+fig.legend(handles, labels, ncols=2, loc="b", label="Bin limits")
+fig.format(suptitle="AR frequencies grouped by NAO")
+```
+
