@@ -1,0 +1,683 @@
+---
+title: PCA analysis on ARs
+author:
+  - name: Erik Holmgren
+    affiliation: Chalmers University of Technology
+    corresponding: true
+    email: erik.holmgren@chalmers.se
+    orcid: 0000-0001-5328-3102
+abstract: Testing to do a PCA analysis on AR data.
+format:
+  html:
+    code-fold: false
+    toc: true
+    theme:
+        light: default
+execute:
+    cache: true
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .qmd
+      format_name: quarto
+      format_version: '1.0'
+      jupytext_version: 1.16.2
+  kernelspec:
+    display_name: ar_ident
+    language: python
+    name: ar_ident
+---
+
+```{python}
+#| echo: false
+#| output: false
+import os
+
+import cf_xarray as cfxr
+import dask
+import dask.array as da
+import numpy as np
+import proplot as pplt
+import xarray as xr
+import xeofs as xe
+from cartopy import crs as ccrs
+from dask.distributed import Client
+from matplotlib_inline.backend_inline import set_matplotlib_formats
+
+xr.set_options(keep_attrs=True)
+
+%matplotlib inline
+set_matplotlib_formats("svg")
+
+# pplt.rc["figure.facecolor"] = "none"
+```
+
+```{python}
+# | echo: false
+# | output: false
+dask.config.set(temporary_directory="/data/tmp/tmp.aaTT1FhqJp/")
+dask.config.set({"optimization.fuse.ave-width": 5})
+
+dask.config.get("temporary_directory")
+```
+
+
+```{python}
+# | eval: false
+# | echo: false
+# Start up a Dask `LocalCluster`
+client = Client(n_workers=7, threads_per_worker=4, memory_limit="8GB")
+```
+
+```{python}
+PROJ_BASE_PATH = "/data/projects/atmo_rivers_scandinavia"
+```
+
+# Introduction
+Lorem
+
+# Method & Data
+## Load the data
+Load the dataset with Scandinavian ARs.
+
+```{python}
+scand_ars_ds = xr.open_zarr(
+    "/data/atmospheric_rivers/artmip/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231_scandinavia.zarr",
+)
+
+# scand_ars_ds
+```
+
+A peak at what this data might look like:
+
+```{python}
+# | echo: false
+fig, ax = pplt.subplots(
+    figwidth="12cm",
+    proj="nsper",
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    abc=True,
+)
+
+scand_ars_ds.isel(time=-1).ar_features.plot(ax=ax, add_colorbar=False, rasterized=True)
+box = np.asarray([[-2, 32, -2, 32], [52, 52, 73, 73]])
+ax.scatter(*box)
+
+ax.format(coast=True, reso="med")
+```
+
+Load precipitation dataset
+
+```{python}
+pr_ds = xr.open_zarr(
+    "/data/era5/total_precipitation/total_precipitation.zarr/", decode_cf=True
+)
+
+pr_ds
+```
+
+## Sub-setting and preprocessing the data
+For the PCA analysis, we don't need the entire Northern Hemisphere.
+Instead, we select a smaller area centred on Scandinavia.
+We do this by creating a bounding box between 52° and 73°N and 2° to 30°E.
+
+```{python}
+# | echo: false
+
+lat_slice = (50, 74)
+lon_slice = (-10, 45)
+
+fig, ax = pplt.subplots(
+    figwidth="12cm",
+    proj="nsper",
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    abc=True,
+)
+
+pr_ds.isel(time=-1).sel(
+    latitude=slice(*lat_slice[::-1]), longitude=slice(*lon_slice)
+).tp.plot(ax=ax, add_colorbar=False, rasterized=True)
+
+ax.format(coast=True, reso="med", lonlim=lon_slice, latlim=lat_slice)
+```
+
+```{python}
+sel_ds = scand_ars_ds.cf.sel(
+    latitude=slice(*lat_slice), longitude=slice(*lon_slice)
+).chunk("auto")
+sel_pr_ds = pr_ds.cf.sel(
+    latitude=slice(*lat_slice[::-1]),
+    longitude=slice(*lon_slice),
+    time=slice("1979", "2019"),
+).chunk("auto")
+```
+
+```{python}
+# | echo: false
+assert sel_pr_ds.tp.shape == sel_ds.ar_features.shape
+```
+
+Convert Scandinavian ARs to a binary mask.
+
+```{python}
+# | eval: false
+sel_ds.ar_features.data = da.where(sel_ds.ar_features.data > 0, 1, 0)
+```
+
+```{python}
+# | eval: false
+sel_ds = sel_ds.fillna(0)
+sel_pr_ds = sel_pr_ds.fillna(0)
+```
+
+```{python}
+# | eval: false
+sel_ds = sel_ds.persist()
+sel_pr_ds = sel_pr_ds.persist()
+```
+
+## Initial EOF analysis
+We are using the library `xeofs` for computing the EOFs.
+Additionally, we perform a rotated EOF.
+
+```{python}
+# | eval: false
+# Standardize: if true, we are using the correlation matrix.
+model = xe.single.EOF(n_modes=10, use_coslat=True, standardize=False)
+```
+
+```{python}
+ar_eofs_comp_path = "ar_eofs_components.zarr"
+ar_eofs_exp_var_path = "ar_eofs_exp_var.zarr"
+ar_eofs_scores_path = "ar_eofs_scores.zarr"
+```
+
+Get the components and explained variance ratio.
+
+```{python}
+# | eval: false
+# | output: false
+# | jupyter: {outputs_hidden: true}
+ar_components = []
+ar_explained_variance = []
+ar_eof_scores = []
+
+model.fit(sel_ds.ar_features, dim="time")
+ar_components.append(model.components())
+ar_explained_variance.append(model.explained_variance_ratio())
+ar_eof_scores.append(model.scores())
+```
+
+### EOF Rotation
+Apply EOF rotation to the results of the initial EOF analysis.
+
+```{python}
+# | eval: false
+# power=1 -> varimax
+rot_var = xe.single.EOFRotator(n_modes=10, power=1)
+# power>1 promax
+rot_pro = xe.single.EOFRotator(n_modes=10, power=4)
+
+rot_var.fit(model)
+ar_components.append(rot_var.components())
+ar_explained_variance.append(rot_var.explained_variance_ratio())
+ar_eof_scores.append(rot_var.scores())
+
+rot_pro.fit(model)
+ar_components.append(rot_pro.components())
+ar_explained_variance.append(rot_pro.explained_variance_ratio())
+ar_eof_scores.append(rot_pro.scores())
+```
+
+### Save results
+
+```{python}
+def eof_result_list_to_ds(result_list: list) -> xr.Dataset:
+    """Convert a EOF result list to a single dataset by adding a coordinate for the rotation."""
+    for i, rot in enumerate([0, 1, 4]):
+        result_list[i] = result_list[i].assign_coords({"rotation": rot})
+    result_list = xr.concat(result_list, dim="rotation")
+    return result_list
+```
+
+```{python}
+# | eval: false
+ar_components = eof_result_list_to_ds(ar_components)
+ar_explained_variance = eof_result_list_to_ds(ar_explained_variance)
+ar_eof_scores = eof_result_list_to_ds(ar_eof_scores)
+
+ar_components.to_zarr(os.path.join(PROJ_BASE_PATH, ar_eofs_comp_path))
+ar_explained_variance.to_zarr(os.path.join(PROJ_BASE_PATH, ar_eofs_exp_var_path))
+ar_eof_scores.to_zarr(os.path.join(PROJ_BASE_PATH, ar_eofs_scores_path))
+```
+
+Load previously computed results
+
+```{python}
+ar_components = xr.open_zarr(os.path.join(PROJ_BASE_PATH, ar_eofs_comp_path)).load()
+ar_explained_variance = xr.open_zarr(
+    os.path.join(PROJ_BASE_PATH, ar_eofs_exp_var_path)
+).load()
+ar_eof_scores = xr.open_zarr(os.path.join(PROJ_BASE_PATH, ar_eofs_scores_path)).load()
+```
+
+## Combined EOF analysis
+Here we perform the combined PCA analysis of precipitation and AR occurrence.
+
+```{python}
+# | eval: false
+# | echo: false
+# | output: false
+# model = xe.single.ExtendedEOF(
+#     n_modes=10, tau=1, embedding=40, use_coslat=True, standardize=False, n_pca_modes=50
+# )
+```
+
+```{python}
+# | eval: false
+# Standardize: if true, we are using the correlation matrix.
+model = xe.single.EOF(n_modes=10, use_coslat=True, standardize=False)
+```
+
+```{python}
+ar_pr_eofs_comp_path = "ar_pr_eofs_components.zarr"
+ar_pr_eofs_exp_var_path = "ar_pr_eofs_exp_var.zarr"
+ar_pr_eofs_scores_path = "ar_pr_eofs_scores.zarr"
+```
+
+Get the components and explained variance ratio.
+
+```{python}
+# | eval: false
+# | output: false
+ar_pr_eofs_components = []
+ar_pr_eofs_explained_variance = []
+ar_pr_eofs_scores = []
+
+model.fit([sel_ds.ar_features, sel_pr_ds.tp], dim="time")
+ar_pr_eofs_components.append(model.components())
+ar_pr_eofs_explained_variance.append(model.explained_variance_ratio())
+ar_pr_eofs_scores.append(model.scores())
+```
+
+### EOF Rotation
+
+```{python}
+# | eval: false
+# power=1 -> varimax
+rot_var = xe.single.EOFRotator(n_modes=10, power=1)
+# power>1 promax
+rot_pro = xe.single.EOFRotator(n_modes=10, power=4)
+
+rot_var.fit(model)
+ar_pr_eofs_components.append(rot_var.components())
+ar_pr_eofs_explained_variance.append(rot_var.explained_variance_ratio())
+ar_pr_eofs_scores.append(rot_var.scores())
+
+rot_pro.fit(model)
+ar_pr_eofs_components.append(rot_pro.components())
+ar_pr_eofs_explained_variance.append(rot_pro.explained_variance_ratio())
+ar_pr_eofs_scores.append(rot_pro.scores())
+```
+
+### Save results
+
+```{python}
+def combined_eof_result_list_to_ds(result_list: list) -> xr.Dataset:
+    """Convert a EOF result list to a single dataset by adding a coordinate for the rotation."""
+    for i, rot in enumerate([0, 1, 4]):
+        for j, var in enumerate(["ar", "tp"]):
+            result_list[i][j] = result_list[i][j].assign_coords(
+                {"rotation": rot, "variable": var}
+            )
+        result_list[i][1] = result_list[i][1].rename(
+            {"latitude": "lat", "longitude": "lon"}
+        )
+    result_list_ds = xr.combine_nested(result_list, concat_dim=["rotation", "variable"])
+    return result_list_ds
+```
+
+```{python}
+# | eval: false
+ar_pr_eofs_components = combined_eof_result_list_to_ds(ar_pr_eofs_components)
+ar_pr_eofs_explained_variance = eof_result_list_to_ds(ar_pr_eofs_explained_variance)
+ar_pr_eofs_scores = eof_result_list_to_ds(ar_pr_eofs_scores)
+
+ar_pr_eofs_components.to_zarr(os.path.join(PROJ_BASE_PATH, ar_pr_eofs_comp_path))
+ar_pr_eofs_explained_variance.to_zarr(
+    os.path.join(PROJ_BASE_PATH, ar_pr_eofs_exp_var_path)
+)
+ar_pr_eofs_scores.to_zarr(os.path.join(PROJ_BASE_PATH, ar_pr_eofs_scores_path))
+```
+
+Load previously computed results
+
+```{python}
+ar_pr_eofs_components = xr.open_zarr(
+    os.path.join(PROJ_BASE_PATH, ar_pr_eofs_comp_path)
+).load()
+ar_pr_eofs_explained_variance = xr.open_zarr(
+    os.path.join(PROJ_BASE_PATH, ar_pr_eofs_exp_var_path)
+).load()
+ar_pr_eofs_scores = xr.open_zarr(
+    os.path.join(PROJ_BASE_PATH, ar_pr_eofs_scores_path)
+).load()
+```
+
+### Validation
+Significance testing using a bootstrap
+
+```{python}
+# | eval: false
+n_boot = 50
+bs = xe.validation.EOFBootstrapper(n_bootstraps=n_boot)
+bs.fit(model)
+```
+
+### Resampled data
+We resample the data to weekly since to investigate the cumulative effects of ARs on precipitation.
+
+```{python}
+# | eval: false
+sel_weekly_ds = sel_ds.resample(time="3d", label="right").sum()
+sel_pr_weekly_ds = sel_pr_ds.resample(time="3d", label="right").sum()
+```
+
+```{python}
+# | eval: false
+model = xe.single.ExtendedEOF(
+    n_modes=10, tau=1, embedding=10, use_coslat=True, standardize=True, n_pca_modes=50
+)
+```
+
+```{python}
+ar_pr_week_eofs_comp_path = "ar_pr_week_eofs_components.zarr"
+ar_pr_week_eofs_exp_var_path = "ar_pr_week_eofs_exp_var.zarr"
+ar_pr_week_eofs_scores_path = "ar_pr_week_eofs_scores.zarr"
+```
+
+Get the components and explained variance ratio.
+
+```{python}
+# | eval: false
+# | output: false
+model.fit([sel_weekly_ds.ar_features, sel_pr_weekly_ds.tp], dim="time")
+components_weekly = model.components()
+explained_variance_ratio_weekly = model.explained_variance_ratio()
+explained_variance_weekly = model.explained_variance()
+eof_scores_weekly = model.scores()
+```
+
+# Results
+## Scandinavia ARs EOFs
+Some plots..
+
+```{python}
+# | echo: false
+# | label: fig-ar_eofs
+# | fig-cap: The first six (a-f) EOFs of atmospheric rivers making landfall over Scandinavia. Explaned variance (%) is shown in brackets.
+nrows = 3
+ncols = 6
+fig, axs = pplt.subplots(
+    # figwidth="12cm",
+    proj="nsper",
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    abc=True,
+    ncols=ncols,
+    nrows=3,
+)
+
+cmap = pplt.Colormap("NegPos")
+ar_lim = ar_components.components.quantile([0.02, 0.98]).to_numpy()
+
+for row in range(nrows):
+    for col in range(ncols):
+        exp_var = (
+            ar_explained_variance.explained_variance_ratio.isel(
+                mode=col, rotation=row
+            ).to_numpy()
+            * 100
+        )
+        cm = ar_components.components.isel(mode=col, rotation=row).plot(
+            ax=axs[row, col],
+            cmap=cmap,
+            vmin=ar_lim[0],
+            vmax=ar_lim[1],
+            add_colorbar=False,
+            rasterized=True,
+        )
+        axs[row, col].format(title=f"Exp.: {exp_var:.2f}%")
+
+fig.colorbar(cm, loc="right")
+top_labels = [f"EOF: {i+1}" for i in range(ncols)]
+axs.format(
+    coast=True,
+    reso="med",
+    lonlim=lon_slice,
+    latlim=lat_slice,
+    leftlabels=("Standard", "Varimax", "Promax"),
+    toplabels=top_labels,
+)
+
+fig.format(suptitle="Scandinavian ARs EOFs")
+```
+
+```{python}
+# | echo: false
+# | label: fig-ar_eofs_scores
+# | fig-cap: Lorem
+ncols = 6
+nrows = 3
+fig, axs = pplt.subplots(
+    # figwidth="12cm",
+    # proj="nsper",
+    # proj_kw={"lon_0": 14, "lat_0": 65},
+    abc=True,
+    ncols=ncols,
+    nrows=nrows,
+)
+
+for row in range(nrows):
+    for col in range(ncols):
+        ar_eof_scores.scores.isel(mode=col, rotation=row).groupby(
+            "time.dayofyear"
+        ).mean().rolling(dayofyear=15).mean().plot(
+            ax=axs[row, col],
+        )
+        axs[row, col].format(title="")
+
+top_labels = [f"EOF: {i+1}" for i in range(ncols)]
+axs.format(leftlabels=("Standard", "Varimax", "Promax"), toplabels=top_labels)
+
+fig.format(suptitle="Scandinavian ARs EOF Scores (1 year rolling mean)")
+```
+
+## Combined EOFs
+
+```{python}
+ar_lim = (
+    ar_pr_eofs_components.components.sel(variable="ar")
+    .quantile([0.05, 0.95])
+    .to_numpy()
+)
+pr_lim = (
+    ar_pr_eofs_components.components.sel(variable="tp")
+    .quantile([0.05, 0.95])
+    .to_numpy()
+)
+nrows = 10
+ncols = 2
+fig, axs = pplt.subplots(
+    # figwidth="15cm",
+    # figheight="24cm",
+    proj="nsper",
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    abc=True,
+    ncols=ncols,
+    nrows=nrows,
+)
+for i in range(nrows):
+    exp_var = (
+        ar_pr_eofs_explained_variance.explained_variance_ratio.isel(
+            mode=i, rotation=1
+        ).to_numpy()
+        * 100
+    )
+    ar_cm = (
+        ar_pr_eofs_components.components.isel(mode=i)
+        .sel(variable="ar", rotation=1)
+        .plot(
+            ax=axs[i, 0],
+            rasterized=True,
+            vmin=ar_lim[0],
+            vmax=ar_lim[1],
+            cmap="NegPos",
+            norm=pplt.DivergingNorm(vmin=ar_lim[0], vmax=ar_lim[1]),
+            add_colorbar=False,
+        )
+    )
+    pr_cm = (
+        ar_pr_eofs_components.components.isel(mode=i)
+        .sel(variable="tp", rotation=1)
+        .plot(
+            ax=axs[i, 1],
+            rasterized=True,
+            vmin=pr_lim[0],
+            vmax=pr_lim[1],
+            cmap="NegPos",
+            norm=pplt.DivergingNorm(vmin=pr_lim[0], vmax=pr_lim[1]),
+            add_colorbar=False,
+        )
+    )
+    axs[i, 0].format(title=f"Exp. var.: {exp_var:.2f}%")
+    axs[i, 1].format(title="")
+
+fig.colorbar(ar_cm, loc="b", col=1, extend="both")
+fig.colorbar(pr_cm, loc="b", col=2, extend="both")
+
+mode_labels = [f"EOF: {i+1}" for i in range(nrows)]
+axs.format(
+    coast=True,
+    reso="med",
+    lonlim=lon_slice,
+    latlim=lat_slice,
+    toplabels=("AR", "TP"),
+    leftlabels=mode_labels,
+)
+fig.format(suptitle="Combined EOF of AR occurrence\nand total precipitation")
+```
+
+```{python}
+fig, ax = pplt.subplots()
+(
+    ar_pr_eofs_explained_variance.explained_variance_ratio.sel(rotation=1).cumsum(
+        "mode"
+    )
+    * 100
+).plot(ax=ax)
+```
+
+### Weekly resample
+
+```{python}
+# | eval: false
+nrows = 6
+fig, axs = pplt.subplots(
+    figwidth="20cm",
+    proj="nsper",
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    abc=True,
+    ncols=2,
+    nrows=nrows,
+)
+for i in range(nrows):
+    components_weekly[0].sel(mode=4).isel(embedding=i).plot(
+        ax=axs[i, 0], rasterized=True
+    )
+    components_weekly[1].sel(mode=4).isel(embedding=i).plot(
+        ax=axs[i, 1], rasterized=True
+    )
+
+axs.format(coast=True, reso="med", lonlim=(-3, 34), latlim=(50, 75))
+```
+
+```{python}
+# | eval: false
+nrows = 6
+fig, axs = pplt.subplots(
+    figwidth="15cm",
+    abc=True,
+    ncols=2,
+    nrows=nrows,
+)
+for i in range(nrows):
+    components_weekly[0].mean("lon").isel(mode=i).plot(
+        ax=axs[i, 0], rasterized=True, add_colorbar=False
+    )
+    components_weekly[1].mean("longitude").isel(mode=i).plot(
+        ax=axs[i, 1], rasterized=True, add_colorbar=False
+    )
+
+axs.format(grid=True)
+```
+
+```{python}
+# | eval: false
+fig, ax = pplt.subplots()
+(explained_variance_ratio_weekly.cumsum() * 100).plot(ax=ax)
+```
+
+## Seasonal frequencies
+
+```{python}
+# | echo: false
+season_freqs = xr.open_dataarray(
+    "/data/projects/atmo_rivers_scandinavia/ERA5_6hr_Guan_Waliser_season_freqs.nc"
+)
+```
+
+```{python}
+# | echo: false
+# | label: fig-ar_season_freq
+# | fig-cap: Scandinavian AR frequencies grouped by season.
+
+bins, hist = np.unique(scand_ars_ds.time.dt.season, return_counts=True)
+
+lons = scand_ars_ds.lon
+lats = scand_ars_ds.lat
+
+# season_freqs_rel = season_freqs.rolling(latitude=5, longitude=5, center=True).mean()
+season_freqs_rel = season_freqs / hist.reshape((-1, 1, 1)) * 100
+
+vmax = season_freqs_rel.max().to_numpy()
+vmax = np.round(vmax, 2)
+
+fig, axs = pplt.subplots(
+    nrows=2,
+    ncols=2,
+    figwidth="15cm",
+    proj="nsper",
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    abc=True,
+)
+# Season order is strange in xarray
+seasons = ["DJF", "MAM", "JJA", "SON"]
+cmap = pplt.Colormap("dusk", left=0.1)
+for i, season in enumerate(seasons):
+    freq_field = season_freqs_rel.sel(season=season)
+    freq_field = freq_field.where(freq_field > 0, np.nan)
+
+    cm = axs[i].pcolormesh(
+        x=lons, y=lats, z=freq_field, vmin=0, vmax=vmax, cmap=cmap, rasterized=True
+    )
+
+    axs[i].format(title=f"{season}\nn: {hist[i]}")
+
+fig.colorbar(cm, loc="b", label=f"AR centerline frequency [% timesteps]")
+axs.format(
+    coast=True,
+    reso="med",
+)
+fig.format(suptitle="AR frequencies grouped by season")
+```
+

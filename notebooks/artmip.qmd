@@ -1,6 +1,10 @@
 ---
-title: ARTMIP investigation
+title: ARTMIP analysis
 author: Erik Holmgren
+format:
+  html:
+    code-fold: show
+    toc: true
 jupyter:
   jupytext:
     text_representation:
@@ -27,7 +31,7 @@ from shapely.ops import unary_union
 ```
 
 ```{python}
-client = Client()
+client = Client(n_workers=7, threads_per_worker=4, memory_limit="8GB")
 ```
 
 ## ARTMIP data
@@ -41,12 +45,13 @@ path_zarr = "/data/atmospheric_rivers/artmip/ERA5.ar_tag.GuanWaliser_v2.1hr.1979
 ```
 
 ```{python}
-ds = xr.open_mfdataset(path_zarr, engine="zarr", chunks="auto")
+ds = xr.open_zarr(path_zarr)
+# We don't need hourly data.
 ds = ds.thin({"time": 6})
 ```
 
 ```{python}
-ds.ar_binary_tag.sel(time=slice("1979", "1981"))
+ds.ar_binary_tag
 ```
 
 ```{python}
@@ -59,9 +64,8 @@ ds.ar_binary_tag.isel(time=5).plot.imshow(ax=ax)
 We assign unique IDs to each AR object using the script `get_guan_walliser_ar_ids.py`.
 
 ```{python}
-ds_feature = xr.open_mfdataset(
+ds_feature = xr.open_zarr(
     "/data/atmospheric_rivers/artmip/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231.zarr",
-    engine="zarr",
 )
 ```
 
@@ -130,29 +134,34 @@ mask = xr.DataArray(
 
 ```{python}
 fig, ax = pplt.subplots()
-mask.plot(ax=ax);
+mask.plot(ax=ax)
 ```
 
-### Select the IDs that intersect the mask.
+### Select the IDs that intersect the mask. {.hidden}
 
 ```{python}
+#| eval: false
 ids = da.unique(ds_feature.ar_feautures.where(mask, np.nan).data)
 ```
 
 ```{python}
+#| eval: false
 ids = ids.compute()
 ```
 
 ```{python}
+#| eval: false
 mask_isin = da.isin(ds_feature.ar_feautures.data, ids[1:-1])
 scand_ars = ds_feature.ar_feautures.where(mask_isin, np.nan)
 ```
 
 ```{python}
+#| eval: false
 scand_ars.name = "ar_features"
 ```
 
 ```{python}
+#| eval: false
 scand_ars.to_zarr(
     "/data/atmospheric_rivers/artmip/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231_scandinavia.zarr"
 )
@@ -161,10 +170,8 @@ scand_ars.to_zarr(
 ## Load Scandinavian ARs
 
 ```{python}
-scand_ars = xr.open_mfdataset(
+scand_ars = xr.open_zarr(
     "/data/atmospheric_rivers/artmip/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231_scandinavia.zarr",
-    engine="zarr",
-    chunks="auto",
 )
 ```
 
@@ -177,7 +184,7 @@ fig, ax = pplt.subplots(proj="robin")
 scand_ars.ar_features.isel(time=-1).plot()
 ```
 
-### Annual frequencies
+### Annual frequencies {.hidden}
 
 ```{python}
 def calc_ar_freqs(ds):
@@ -192,14 +199,17 @@ def calc_ar_freqs(ds):
 ```
 
 ```{python}
+#| eval: false
 freqs = calc_ar_freqs(scand_ars.ar_features).compute()
 ```
 
 ```{python}
+#| eval: false
 n_timesteps = scand_ars.time.shape[0]
 ```
 
 ```{python}
+#| eval: false
 fig, ax = pplt.subplots(
     figwidth="16cm",
     proj="nsper",
@@ -213,14 +223,25 @@ fig.colorbar(cm, label="AR Frequency [%]")
 ax.format(coast=True, reso="med", title="Annual AR frequencies over Scandinavia")
 ```
 
-### Seasonal AR frequencies
+### Compute seasonal AR frequencies {.hidden}
 
 ```{python}
+#| eval: false
 season_freqs = scand_ars.ar_features.groupby("time.season").map(calc_ar_freqs)
 
 season_freqs = season_freqs.compute()
 
-season_freqs.to_netcdf("/data/projects/atmo_rivers_scandinavia/ERA5_6hr_Guan_Waliser_season_freqs.nc")
+season_freqs.to_netcdf(
+    "/data/projects/atmo_rivers_scandinavia/ERA5_6hr_Guan_Waliser_season_freqs.nc"
+)
+```
+
+### Load seasonal AR frequencies
+
+```{python}
+season_freqs = xr.open_dataarray(
+    "/data/projects/atmo_rivers_scandinavia/ERA5_6hr_Guan_Waliser_season_freqs.nc"
+)
 ```
 
 ```{python}
@@ -364,16 +385,27 @@ bins = np.quantile(nao_ar_df, [0, mid / 2, mid, mid + (1 - mid) / 2, 1])
 bins
 ```
 
-#### Groupby NAO
+#### Groupby NAO {.hidden}
 
 ```{python}
+#| eval: false
 nao_freqs = scand_ars.assign_coords({"nao": ("time", nao_ar_df.to_numpy())})
 
 nao_freqs = nao_freqs.ar_features.groupby_bins("nao", bins).map(calc_ar_freqs)
 
 nao_freqs = nao_freqs.compute()
 
-nao_freqs.to_netcdf("/data/projects/atmo_rivers_scandinavia/ERA5_6hr_Bin_Waliser_nao_freqs.nc")
+nao_freqs.to_netcdf(
+    "/data/projects/atmo_rivers_scandinavia/ERA5_6hr_Bin_Waliser_nao_freqs.nc"
+)
+```
+
+#### Load Groupby NAO
+
+```{python}
+nao_freqs = xr.open_dataarray(
+    "/data/projects/atmo_rivers_scandinavia/ERA5_6hr_Bin_Waliser_nao_freqs.nc"
+)
 ```
 
 ```{python}
@@ -476,3 +508,12 @@ fig.legend(handles, labels, ncols=2, loc="b", label="Bin limits")
 fig.format(suptitle="AR frequencies grouped by NAO")
 ```
 
+# PCA/MCA analysis
+Proving a bit difficult.
+
+- Lots of data, 6 hourly needed?
+- Possible library `xeofs`, but memory blows up
+- Plain SVD works
+- Next step is to figure out MCA or a join PCA
+    - But not sure what these would give yet.
+    - Works with binary data?
