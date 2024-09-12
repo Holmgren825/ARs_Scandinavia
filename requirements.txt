@@ -14,3 +14,4 @@ geopandas
 numba
 zarr
 netcdf4
+xeofs
