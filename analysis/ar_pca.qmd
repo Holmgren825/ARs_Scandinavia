@@ -260,10 +260,10 @@ model = xe.single.EOF(n_modes=10, use_coslat=True, standardize=False)
 Define the names of the files.
 
 ```{python}
-fnames = {
-    "comp_name": "ar_pr_resample_eofs_components.zarr",
-    "exp_var_name": "ar_pr_resample_eofs_exp_var.zarr",
-    "scores_name": "ar_pr_resample_eofs_scores.zarr",
+fnames_5day = {
+    "comp_name": "ar_pr_resample-5d_eofs_components.zarr",
+    "exp_var_name": "ar_pr_resample-5d_eofs_exp_var.zarr",
+    "scores_name": "ar_pr_resample-5d_eofs_scores.zarr",
 }
 ```
 
@@ -272,7 +272,7 @@ pca = ComputePCA(
     data=[sel_resample_ds.ar_features, sel_pr_resample_ds.tp],
     model=model,
     base_path=PROJ_BASE_PATH,
-    result_fnames=fnames,
+    result_fnames=fnames_5day,
     combined_pca=True,
     normalize=True,
 )
