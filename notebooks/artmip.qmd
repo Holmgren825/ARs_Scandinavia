@@ -11,7 +11,7 @@ jupyter:
       extension: .qmd
       format_name: quarto
       format_version: '1.0'
-      jupytext_version: 1.16.2
+      jupytext_version: 1.16.4
   kernelspec:
     display_name: ar_ident
     language: python
@@ -76,9 +76,11 @@ ax.format(coast=True, reso="med")
 ```
 
 ## Scandinavian ARs
+Definition of Scandinavia: https://en.wikipedia.org/wiki/Scandinavia.
+Excluding Svalbard.
 
 ```{python}
-gdf = gpd.read_file("../etc/ne_110m_admin_0_countries/ne_110m_admin_0_countries.shp")
+gdf = gpd.read_file("../etc/ne_50_admin_0_countries/ne_50m_admin_0_countries.shp")
 ```
 
 ```{python}
@@ -86,13 +88,12 @@ scand_gdf = gdf[
     (gdf["ADMIN"] == "Sweden")
     + (gdf["ADMIN"] == "Norway")
     + (gdf["ADMIN"] == "Denmark")
-    + (gdf["ADMIN"] == "Finland")
 ]
 ```
 
 ```{python}
-scand_gdf.loc[scand_gdf.index == 21, "geometry"] = (
-    scand_gdf.loc[scand_gdf.index == 21, "geometry"].iloc[0].geoms[1]
+scand_gdf.loc[scand_gdf.index == 88, "geometry"] = (
+    scand_gdf.loc[scand_gdf.index == 88, "geometry"].iloc[0].geoms[1]
 )
 ```
 
@@ -104,6 +105,10 @@ ax.format()
 
 ```{python}
 scand_shape = unary_union(scand_gdf.geometry)
+```
+
+```{python}
+scand_shape
 ```
 
 ```{python}
@@ -163,7 +168,7 @@ scand_ars.name = "ar_features"
 ```{python}
 #| eval: false
 scand_ars.to_zarr(
-    "/data/atmospheric_rivers/artmip/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231_scandinavia.zarr"
+    "/data/projects/atmo_rivers_scandinavia/ERA5_ar_ids_GuanWaliser_v2_6hr_19790101-20191231_scandinavia.zarr"
 )
 ```
 
@@ -171,7 +176,7 @@ scand_ars.to_zarr(
 
 ```{python}
 scand_ars = xr.open_zarr(
-    "/data/atmospheric_rivers/artmip/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231_scandinavia.zarr",
+    "/data/projects/atmo_rivers_scandinavia/ERA5_ar_ids_GuanWaliser_v2_6hr_19790101-20191231_scandinavia.zarr",
 )
 ```
 
@@ -392,9 +397,17 @@ bins
 nao_freqs = scand_ars.assign_coords({"nao": ("time", nao_ar_df.to_numpy())})
 
 nao_freqs = nao_freqs.ar_features.groupby_bins("nao", bins).map(calc_ar_freqs)
+```
 
+```{python}
 nao_freqs = nao_freqs.compute()
+```
 
+```{python}
+nao_freqs["nao_bins"] = nao_freqs.nao_bins.astype(str)
+```
+
+```{python}
 nao_freqs.to_netcdf(
     "/data/projects/atmo_rivers_scandinavia/ERA5_6hr_Bin_Waliser_nao_freqs.nc"
 )
@@ -508,12 +521,3 @@ fig.legend(handles, labels, ncols=2, loc="b", label="Bin limits")
 fig.format(suptitle="AR frequencies grouped by NAO")
 ```
 
-# PCA/MCA analysis
-Proving a bit difficult.
-
-- Lots of data, 6 hourly needed?
-- Possible library `xeofs`, but memory blows up
-- Plain SVD works
-- Next step is to figure out MCA or a join PCA
-    - But not sure what these would give yet.
-    - Works with binary data?
