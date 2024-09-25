@@ -49,7 +49,7 @@ from cartopy import crs as ccrs
 from dask.distributed import Client
 from matplotlib_inline.backend_inline import set_matplotlib_formats
 
-from .utils.pca_utils import ComputePCA, load_pca_results
+from utils.pca_utils import ComputePCA, load_pca_results
 
 xr.set_options(keep_attrs=True)
 
@@ -124,10 +124,13 @@ Instead, we select a smaller area centred on Scandinavia.
 We do this by creating a bounding box between 52° and 73°N and 2° to 30°E.
 
 ```{python}
-#| echo: false
-
 lat_slice = (50, 74)
 lon_slice = (-10, 45)
+```
+
+```{python}
+#| echo: false
+
 
 fig, ax = pplt.subplots(
     figwidth="12cm",
@@ -185,9 +188,9 @@ Additionally, we perform a rotated EOF.
 
 ```{python}
 fnames_single = {
-    "comp_path": "ar_eofs_components.zarr",
-    "exp_var_path": "ar_eofs_exp_var.zarr",
-    "scores_path": "ar_eofs_scores.zarr",
+    "comp_name": "ar_eofs_components.zarr",
+    "exp_var_name": "ar_eofs_exp_var.zarr",
+    "scores_name": "ar_eofs_scores.zarr",
 }
 ```
 
@@ -199,12 +202,12 @@ model = xe.single.EOF(n_modes=10, use_coslat=True, standardize=False)
 
 ```{python}
 pca_model = ComputePCA(
-    data=[sel_ds.ar_features],
+    data=sel_ds.ar_features,
     model=model,
     base_path=PROJ_BASE_PATH,
-    result_fnames=fnames_6h,
+    result_fnames=fnames_single,
     combined_pca=False,
-    normalize=False,
+    normalize=True,
 )
 pca_model.fit()
 pca_model.save(mode="w")
@@ -214,7 +217,7 @@ pca_model.save(mode="w")
 Here we perform a combined PCA analysis on AR occurrence and precipitation.
 
 ```{python}
-fnames_6h = {
+fnames_comb_6h = {
     "comp_name": "ar_pr_eofs_components.zarr",
     "exp_var_name": "ar_pr_eofs_exp_var.zarr",
     "scores_name": "ar_pr_eofs_scores.zarr",
@@ -229,10 +232,10 @@ model = xe.single.EOF(n_modes=10, use_coslat=True, standardize=False)
 
 ```{python}
 pca_model = ComputePCA(
-    data=[sel_ds.ar_features, sel_resample_ds.tp],
+    data=[sel_ds.ar_features, sel_pr_ds.tp],
     model=model,
     base_path=PROJ_BASE_PATH,
-    result_fnames=fnames_6h,
+    result_fnames=fnames_comb_6h,
     combined_pca=True,
     normalize=True,
 )
@@ -260,7 +263,7 @@ model = xe.single.EOF(n_modes=10, use_coslat=True, standardize=False)
 Define the names of the files.
 
 ```{python}
-fnames_5day = {
+fnames_comb_5day = {
     "comp_name": "ar_pr_resample-5d_eofs_components.zarr",
     "exp_var_name": "ar_pr_resample-5d_eofs_exp_var.zarr",
     "scores_name": "ar_pr_resample-5d_eofs_scores.zarr",
@@ -272,7 +275,7 @@ pca = ComputePCA(
     data=[sel_resample_ds.ar_features, sel_pr_resample_ds.tp],
     model=model,
     base_path=PROJ_BASE_PATH,
-    result_fnames=fnames_5day,
+    result_fnames=fnames_comb_5day,
     combined_pca=True,
     normalize=True,
 )
@@ -280,15 +283,14 @@ pca.fit()
 pca.save(mode="w")
 ```
 
-Get the components and explained variance ratio.
-
-```{python}
-comp, exp_var, scores = load_pca_results(PROJ_BASE_PATH, fnames)
-```
-
 # Results
+
 ## Scandinavia ARs EOFs
 Some plots..
+
+```{python}
+comp, exp_var, scores = load_pca_results(PROJ_BASE_PATH, fnames_single)
+```
 
 ```{python}
 #| echo: false
@@ -306,17 +308,17 @@ fig, axs = pplt.subplots(
 )
 
 cmap = pplt.Colormap("NegPos")
-ar_lim = ar_components.components.quantile([0.02, 0.98]).to_numpy()
+ar_lim = comp.components.quantile([0.02, 0.98]).to_numpy()
 
 for row in range(nrows):
     for col in range(ncols):
-        exp_var = (
-            ar_explained_variance.explained_variance_ratio.isel(
+        curr_exp_var = (
+            exp_var.explained_variance_ratio.isel(
                 mode=col, rotation=row
             ).to_numpy()
             * 100
         )
-        cm = ar_components.components.isel(mode=col, rotation=row).plot(
+        cm = comp.components.isel(mode=col, rotation=row).plot(
             ax=axs[row, col],
             cmap=cmap,
             vmin=ar_lim[0],
@@ -324,7 +326,7 @@ for row in range(nrows):
             add_colorbar=False,
             rasterized=True,
         )
-        axs[row, col].format(title=f"Exp.: {exp_var:.2f}%")
+        axs[row, col].format(title=f"Exp.: {curr_exp_var:.2f}%")
 
 fig.colorbar(cm, loc="right")
 top_labels = [f"EOF: {i+1}" for i in range(ncols)]
@@ -357,7 +359,7 @@ fig, axs = pplt.subplots(
 
 for row in range(nrows):
     for col in range(ncols):
-        ar_eof_scores.scores.isel(mode=col, rotation=row).groupby(
+        scores.scores.isel(mode=col, rotation=row).groupby(
             "time.dayofyear"
         ).mean().rolling(dayofyear=15).mean().plot(
             ax=axs[row, col],
@@ -373,13 +375,17 @@ fig.format(suptitle="Scandinavian ARs EOF Scores (1 year rolling mean)")
 ## Combined EOFs
 
 ```{python}
+comp, exp_var, scores = load_pca_results(PROJ_BASE_PATH, fnames_comb_6h)
+```
+
+```{python}
 ar_lim = (
-    ar_pr_eofs_components.components.sel(variable="ar")
+    comp.components.sel(variable="ar")
     .quantile([0.05, 0.95])
     .to_numpy()
 )
 pr_lim = (
-    ar_pr_eofs_components.components.sel(variable="tp")
+    comp.components.sel(variable="tp")
     .quantile([0.05, 0.95])
     .to_numpy()
 )
@@ -395,14 +401,14 @@ fig, axs = pplt.subplots(
     nrows=nrows,
 )
 for i in range(nrows):
-    exp_var = (
-        ar_pr_eofs_explained_variance.explained_variance_ratio.isel(
+    curr_exp_var = (
+        exp_var.explained_variance_ratio.isel(
             mode=i, rotation=1
         ).to_numpy()
         * 100
     )
     ar_cm = (
-        ar_pr_eofs_components.components.isel(mode=i)
+        comp.components.isel(mode=i)
         .sel(variable="ar", rotation=1)
         .plot(
             ax=axs[i, 0],
@@ -415,7 +421,7 @@ for i in range(nrows):
         )
     )
     pr_cm = (
-        ar_pr_eofs_components.components.isel(mode=i)
+        comp.components.isel(mode=i)
         .sel(variable="tp", rotation=1)
         .plot(
             ax=axs[i, 1],
@@ -427,7 +433,7 @@ for i in range(nrows):
             add_colorbar=False,
         )
     )
-    axs[i, 0].format(title=f"Exp. var.: {exp_var:.2f}%")
+    axs[i, 0].format(title=f"Exp. var.: {curr_exp_var:.2f}%")
     axs[i, 1].format(title="")
 
 fig.colorbar(ar_cm, loc="b", col=1, extend="both")
@@ -448,14 +454,18 @@ fig.format(suptitle="Combined EOF of AR occurrence\nand total precipitation")
 ```{python}
 fig, ax = pplt.subplots()
 (
-    ar_pr_eofs_explained_variance.explained_variance_ratio.sel(rotation=1).cumsum(
+    exp_var.explained_variance_ratio.sel(rotation=1).cumsum(
         "mode"
     )
     * 100
 ).plot(ax=ax)
 ```
 
-### Weekly resample
+### 5 day resample
+
+```{python}
+comp, exp_var, scores = load_pca_results(PROJ_BASE_PATH, fnames_comb_5day)
+```
 
 ```{python}
 ar_lim = comp.components.sel(variable="ar").quantile([0.05, 0.95]).to_numpy()

@@ -1,3 +1,5 @@
+"""Some utlities for doing a PCA analysis on atmospheric rivers and precipitation."""
+
 import os
 from typing import Self, Sequence, Union
 
@@ -91,10 +93,14 @@ class ComputePCA:
 
     def normalize_data(self: Self) -> Self:
         """Normalize the datasets before the PCA analysis."""
-        for i, dataset in enumerate(self.data):
-            self.data[i] = self._normalize_data(dataset)
+        if isinstance(self.data, Sequence):
+            for i, dataset in enumerate(self.data):
+                self.data[i] = self.min_max_norm(dataset)
+        else:
+            self.data = self.min_max_norm(self.data)
 
-    def _normalize_data(self: Self, dataset: xr.DataArray) -> xr.DataArray:
+    def min_max_norm(self: Self, dataset: xr.DataArray) -> xr.DataArray:
+        """Min-max normalizer."""
         return (dataset - dataset.min()) / (dataset.max() - dataset.min())
 
     def save(self: Self, mode: str = None) -> Self:
