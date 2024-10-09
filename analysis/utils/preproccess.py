@@ -93,15 +93,15 @@ class ArtmipDataset:
             + timerange_str
             + ".zarr"
         )
-        try:
-            ds.to_zarr(store_path)
-        except ContainsGroupError:
+        if self.overwrite or not os.path.exists(store_path):
             if self.overwrite:
+                mode = "w"
                 logger.info(f"Overwriting store {store_path}")
-                ds.to_zarr(store_path, "w")
             else:
-                logger.info(f"Store {store_path} already exist.")
-
+                mode = None
+            ds.to_zarr(store_path, mode=mode)
+        else:
+            logger.info(f"Store {store_path} already exist.")
         logger.info("Done")
         self.ar_tag_ds = xr.open_zarr(store_path)
 
@@ -161,7 +161,6 @@ class ArtmipDataset:
                 enumerate(range(first_year, last_year + 1, self.n_year_batch)),
                 disable=not show_progress,
             ):
-
                 tag_ds_sel = tag_ds.sel(
                     time=slice(f"{year}", f"{year+self.n_year_batch-1}")
                 )
@@ -198,6 +197,9 @@ class ArtmipDataset:
 
                 else:
                     ds_feat.to_zarr(store_path, append_dim="time")
+        else:
+            logger.info(f"Store {store_path} already exists.")
+        logger.info("Unique ids done")
 
         self.ar_id_ds = xr.open_zarr(store_path)
 
