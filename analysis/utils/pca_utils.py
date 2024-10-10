@@ -1,11 +1,13 @@
 """Some utlities for doing a PCA analysis on atmospheric rivers and precipitation."""
 
+from typing import Optional, Literal
+
 import os
 from typing import Self, Sequence, Union
 
 import xarray as xr
-import xeofs as xe
-from xeofs.single.base_model_single_set import BaseModel
+import xeofs as xe  # type: ignore
+from xeofs.single.base_model_single_set import BaseModel  # type: ignore
 
 
 class ComputePCA:
@@ -13,16 +15,16 @@ class ComputePCA:
 
     def __init__(
         self: Self,
-        data: Union[xr.DataArray | Sequence[xr.DataArray]],
+        data: Union[xr.DataArray | list[xr.DataArray]],
         model: BaseModel,
         base_path: str,
-        result_fnames: dict[str],
+        result_fnames: dict,
         combined_pca: bool = False,
         normalize: bool = True,
         sample_dim: str = "time",
     ) -> None:
         """"""
-        if isinstance(data, xr.DataArray) or isinstance(data, Sequence):
+        if isinstance(data, xr.DataArray) or isinstance(data, list):
             self.data = data
         else:
             raise TypeError("Data should be an xr.DataArray, or a sequence of.")
@@ -58,11 +60,11 @@ class ComputePCA:
             self.result_fnames = result_fnames
 
         # Where to store the EOF results.
-        self.eofs_component_list = []
-        self.eofs_explained_variance_list = []
-        self.eofs_scores_list = []
+        self.eofs_component_list: list[xr.Dataset] = []
+        self.eofs_explained_variance_list: list[xr.Dataset] = []
+        self.eofs_scores_list: list[xr.Dataset] = []
 
-        self.pca_results = [
+        self.pca_results: list[list[xr.Dataset]] = [
             self.eofs_component_list,
             self.eofs_explained_variance_list,
             self.eofs_scores_list,
@@ -71,7 +73,7 @@ class ComputePCA:
         if self.normalize:
             self.normalize_data()
 
-    def fit(self: Self) -> Self:
+    def fit(self: Self) -> None:
         """Perform the PCA analysis and PCA rotation."""
         # Fit the inital model
         self._fit_helper(self.model, X=self.data, dim=self.sample_dim)
@@ -83,7 +85,7 @@ class ComputePCA:
         self._fit_helper(rot_var, model=self.model)
         self._fit_helper(rot_pro, model=self.model)
 
-    def _fit_helper(self: Self, base_model: BaseModel, **kwargs) -> Self:
+    def _fit_helper(self: Self, base_model: BaseModel, **kwargs) -> None:
         # Here we fit the specific model and append its results to the object.
         base_model.fit(**kwargs)
 
@@ -91,7 +93,7 @@ class ComputePCA:
         self.eofs_explained_variance_list.append(base_model.explained_variance_ratio())
         self.eofs_scores_list.append(base_model.scores())
 
-    def normalize_data(self: Self) -> Self:
+    def normalize_data(self: Self) -> None:
         """Normalize the datasets before the PCA analysis."""
         if isinstance(self.data, Sequence):
             for i, dataset in enumerate(self.data):
@@ -103,12 +105,12 @@ class ComputePCA:
         """Min-max normalizer."""
         return (dataset - dataset.min()) / (dataset.max() - dataset.min())
 
-    def save(self: Self, mode: str = None) -> Self:
+    def save(self: Self, mode: Optional[Literal["w"]] = None) -> None:
         """Save the results of the PCA analysis."""
-        for dataset, fname in zip(
+        for dataset_list, fname in zip(
             self.pca_results, ["comp_name", "exp_var_name", "scores_name"]
         ):
-            dataset = self.result_to_ds(dataset, fname)
+            dataset = self.result_to_ds(dataset_list, fname)
             path = os.path.join(self.base_path, self.result_fnames[fname])
             dataset.to_zarr(path, mode=mode)
 
@@ -120,7 +122,7 @@ class ComputePCA:
             return eof_result_list_to_ds(dataset)
 
 
-def load_pca_results(base_path: str, fnames: dict[str]) -> Sequence[xr.Dataset]:
+def load_pca_results(base_path: str, fnames: dict) -> Sequence[xr.Dataset]:
     """Load AR PCA results."""
     datasets = []
     for key in fnames.values():
@@ -133,8 +135,8 @@ def eof_result_list_to_ds(result_list: list) -> xr.Dataset:
     """Convert a EOF result list to a single dataset by adding a coordinate for the rotation."""
     for i, rot in enumerate([0, 1, 4]):
         result_list[i] = result_list[i].assign_coords({"rotation": rot})
-    result_list = xr.concat(result_list, dim="rotation")
-    return result_list
+    result_ds = xr.concat(result_list, dim="rotation")
+    return result_ds
 
 
 def combined_eof_result_list_to_ds(result_list: list) -> xr.Dataset:

@@ -3,9 +3,7 @@
 import logging
 import os
 import re
-from datetime import datetime
-from glob import glob
-from typing import Self, TypedDict
+from typing import Self, TypedDict, Union, Literal, Optional
 
 import dask.array as da
 import numpy as np
@@ -14,7 +12,6 @@ from ar_identify.feature import _get_labels
 from ar_identify.utils import uniquify_id
 from shapely.geometry import GeometryCollection, MultiPoint
 from tqdm.autonotebook import tqdm
-from zarr.errors import ContainsGroupError
 
 logger = logging.getLogger(__name__)
 
@@ -34,10 +31,10 @@ class ArtmipDataset:
     def __init__(
         self: Self,
         path_dict: PathDict,
-        region_shp: GeometryCollection = None,
+        region_shp: Optional[GeometryCollection] = None,
         overwrite: bool = False,
         n_year_batch: int = 1,
-    ) -> Self:
+    ) -> None:
         # NOTE: We can't do an instance check on typed dicts.
         if isinstance(path_dict, dict):
             # We need to define a type for this dict and what it should look like.
@@ -56,10 +53,10 @@ class ArtmipDataset:
 
         self.ardt_name = self._extract_ardt_name()
 
-        self.region_mask: np.ndarray = None
-        self.region_ar_ds: xr.DataArray = None
-        self.ar_tag_ds: xr.Dataset = None
-        self.ar_id_ds: xr.Dataset = None
+        self.region_mask_ds: Optional[xr.DataArray] = None
+        self.region_ar_ds: Optional[xr.DataArray] = None
+        self.ar_tag_ds: Optional[xr.Dataset] = None
+        self.ar_id_ds: Optional[xr.Dataset] = None
         self.overwrite = overwrite
 
     def _extract_ardt_name(self: Self) -> str:
@@ -68,7 +65,7 @@ class ArtmipDataset:
         ardt_name = re.sub("ar", "ar_tag", ardt_name)
         return ardt_name
 
-    def _create_ar_id_fname(self: Self, time_thin: int) -> None:
+    def _create_ar_id_fname(self: Self, time_thin: int) -> str:
         sub = re.sub("1hr", f"{time_thin}hr", self.ardt_name)
         return re.sub("ar_tag", "ar_id", sub)
 
@@ -78,7 +75,7 @@ class ArtmipDataset:
 
         return f"{first_timestep}-{last_timestep}"
 
-    def preprocess_artmip_catalog(self: Self) -> Self:
+    def preprocess_artmip_catalog(self: Self) -> None:
         """Preprocess a single catalog of tier 2 artmip data."""
         # The first thing we want to do is to take the raw catalog, which contains a number of netcdf files,
         # and open these using xarray and save them as a chunked zarr store.
@@ -95,7 +92,7 @@ class ArtmipDataset:
         )
         if self.overwrite or not os.path.exists(store_path):
             if self.overwrite:
-                mode = "w"
+                mode: Union[Literal["w"] | None] = "w"
                 logger.info(f"Overwriting store {store_path}")
             else:
                 mode = None
@@ -123,13 +120,17 @@ class ArtmipDataset:
     def get_unique_ar_ids(
         self: Self,
         show_progress: bool = False,
-        first_year: int = None,
-        last_year: int = None,
+        first_year: Union[int | None] = None,
+        last_year: Union[int | None] = None,
         time_thin: int = 6,
-    ) -> Self:
+    ) -> None:
         """Get AR feature ids from ARTMIP data."""
         # NOTE: This was done through a separate script, but should be a part of this pipeline now.
 
+        if self.ar_tag_ds is None:
+            raise AttributeError(
+                "ar_tag_ds has not be initiated for the ArtmipDataset, run the preprocessor."
+            )
         tag_ds = self.ar_tag_ds
         tag_ds = tag_ds.thin({"time": time_thin})
 
@@ -168,7 +169,8 @@ class ArtmipDataset:
                 features = _get_labels(
                     tag_ds_sel.ar_binary_tag, wrap_axes=(2,), structure=structure
                 )
-                features = features.rechunk((1, -1, -1))
+                if isinstance(features, xr.DataArray):
+                    features = features.rechunk((1, -1, -1))
 
                 features = da.where(
                     features > 0,
@@ -203,8 +205,13 @@ class ArtmipDataset:
 
         self.ar_id_ds = xr.open_zarr(store_path)
 
-    def create_region_mask(self: Self) -> Self:
-        x, y = np.meshgrid(self.ds.lon, self.ds.lat)
+    def create_region_mask(self: Self) -> None:
+        if self.region_shp is None:
+            raise AttributeError("region_shp not set for ArtmipDataset")
+        if self.ar_id_ds is None:
+            raise AttributeError("ar_id_ds is not initiated for ArtmipDataset")
+
+        x, y = np.meshgrid(self.ar_id_ds.lon, self.ar_id_ds.lat)
 
         x_flat = x.flatten()
         y_flat = y.flatten()
@@ -215,37 +222,28 @@ class ArtmipDataset:
         indices = [i for i, p in enumerate(points.geoms) if self.region_shp.contains(p)]
 
         # Create the mask
-        mask = np.ones(self.ar_tag_ds.ar_binary_tag.shape[1:], dtype=bool)
+        mask = np.ones(self.ar_id_ds.ar_binary_tag.shape[1:], dtype=bool)
         # Set values within the specified region to false, e.g. the areas we want to keep.
         mask[np.unravel_index(indices, mask.shape)] = False
-        self.region_mask = xr.DataArray(
+        self.region_mask_ds = xr.DataArray(
             data=~mask,
             dims=["lat", "lon"],
-            coords={"lon": self.ds.lon, "lat": self.ds.lat},
+            coords={"lon": self.ar_id_ds.lon, "lat": self.ar_id_ds.lat},
         )
 
-    def select_ar_ids(self: Self) -> Self:
+    def select_region_ars(self: Self) -> None:
         """Select ID numbers of ARs that intersect the specified region (region_mask)."""
-        ids = da.unique(self.ds.ar_features.where(self.region_mask, np.nan).data)
+        if self.ar_id_ds is None:
+            raise AttributeError("ar_id_ds is not initiated for ArtmipDataset")
+
+        ids = da.unique(
+            self.ar_id_ds.ar_features.where(self.region_mask_ds, np.nan).data
+        )
         ids = ids.compute()
-        mask_isin = da.isin(self.ds.ar_feautures.data, ids[1:-1])
-        region_ars = self.ds.ar_feautures.where(mask_isin, np.nan)
+        mask_isin = da.isin(self.ar_id_ds.ar_feautures.data, ids[1:-1])
+        region_ars = self.ar_id_ds.ar_feautures.where(mask_isin, np.nan)
         region_ars.name = "ar_features"
         self.region_ar_ds = region_ars
 
     def _extract_fname(self: Self) -> str:
         raise NotImplementedError
-
-    def save_ar_ids(self: Self, mode: str = None) -> Self:
-        """Save AR dataset.
-
-        Arguments:
-        ---------
-        mode: str, optional
-            Mode to use when saving the region ARs to disk (zarr).
-
-        """
-        full_path = os.path.join(
-            self.path_dict["project_dir"], self.path_dict["region_ar_fname"]
-        )
-        self.region_ar_ds.to_zarr(full_path, mode=mode)
