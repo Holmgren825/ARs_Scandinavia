@@ -206,6 +206,8 @@ class ArtmipDataset:
         self.ar_id_ds = xr.open_zarr(store_path)
 
     def create_region_mask(self: Self) -> None:
+        """Create a binary mask for the specified region used to extract atmospheric rivers."""
+        logger.info("Start: Create region mask.")
         if self.region_shp is None:
             raise AttributeError("region_shp not set for ArtmipDataset")
         if self.ar_id_ds is None:
@@ -222,7 +224,7 @@ class ArtmipDataset:
         indices = [i for i, p in enumerate(points.geoms) if self.region_shp.contains(p)]
 
         # Create the mask
-        mask = np.ones(self.ar_id_ds.ar_binary_tag.shape[1:], dtype=bool)
+        mask = np.ones(self.ar_id_ds.ar_unique_id.shape[1:], dtype=bool)
         # Set values within the specified region to false, e.g. the areas we want to keep.
         mask[np.unravel_index(indices, mask.shape)] = False
         self.region_mask_ds = xr.DataArray(

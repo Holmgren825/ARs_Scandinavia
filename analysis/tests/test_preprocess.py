@@ -3,14 +3,18 @@ import logging
 import numpy as np
 import pytest
 import xarray as xr
+import geopandas as gpd
 from distributed.client import Client
 from utils.preproccess import ArtmipDataset, PathDict
+from shapely.ops import unary_union
 
 logger = logging.getLogger(__name__)
 
 
 logger.info("Started testing")
 
+# TODO: Can we come up with some better mock data? We really don't to run
+# this on the whole dataset.
 path_dict: PathDict = {
     "artmip_dir": "/data/atmospheric_rivers/artmip/ERA5.ar.Mundhenk_v3.1hr/",
     "project_dir": "/data/projects/atmo_rivers_scandinavia/",
@@ -27,6 +31,23 @@ def dask_client() -> None:
     logger.info(f"Dask client started, {client.dashboard_link}")
     yield client
     client.close()
+
+
+@pytest.fixture
+def test_shp() -> None:
+    # Pytest root dir is project root dir.
+    gdf = gpd.read_file("./etc/ne_50_admin_0_countries/ne_50m_admin_0_countries.shp")
+    scand_gdf = gdf[
+        (gdf["ADMIN"] == "Sweden")
+        + (gdf["ADMIN"] == "Norway")
+        + (gdf["ADMIN"] == "Denmark")
+    ]
+    scand_gdf.loc[scand_gdf.index == 88, "geometry"] = (
+        scand_gdf.loc[scand_gdf.index == 88, "geometry"].iloc[0].geoms[1]
+    )
+
+    scand_shape = unary_union(scand_gdf.geometry)
+    return scand_shape
 
 
 def test_path_dict() -> None:
@@ -91,5 +112,11 @@ def test_get_unique_ar_ids() -> None:
     # Check that we have the correct number of years.
     assert id_ds.time.shape == artmip_ds.ar_tag_ds.thin({"time": 6}).time.shape
 
+
+def test_create_region_mask(test_shp) -> None:
+    artmip_ds.region_shp = test_shp
+    artmip_ds.create_region_mask()
+    assert isinstance(artmip_ds.region_mask_ds, xr.DataArray)
+    assert artmip_ds.region_mask_ds.shape == artmip_ds.ar_id_ds.ar_unique_id.shape[1:]
 
 logger.info("Finished testing")
