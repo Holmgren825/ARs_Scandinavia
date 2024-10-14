@@ -1,12 +1,12 @@
 import logging
 
+import geopandas as gpd
 import numpy as np
 import pytest
 import xarray as xr
-import geopandas as gpd
 from distributed.client import Client
-from utils.preproccess import ArtmipDataset, PathDict
 from shapely.ops import unary_union
+from utils.preproccess import ArtmipDataset, PathDict
 
 logger = logging.getLogger(__name__)
 
@@ -18,11 +18,12 @@ logger.info("Started testing")
 path_dict: PathDict = {
     "artmip_dir": "/data/atmospheric_rivers/artmip/ERA5.ar.Mundhenk_v3.1hr/",
     "project_dir": "/data/projects/atmo_rivers_scandinavia/",
+    "region_name": "scand_ars",
 }
 # TODO: making this a fixture will give each a fresh copy of the ArtmipDataset.
 # Hence there will be no mutation of the data. Currently we rely on this for certain checks
 # e.g. populating .ar_tag_ds.
-artmip_ds = ArtmipDataset(path_dict=path_dict)
+artmip_ds = ArtmipDataset(path_dict=path_dict, time_thin=6)
 
 
 @pytest.fixture(scope="module")
@@ -118,5 +119,15 @@ def test_create_region_mask(test_shp) -> None:
     artmip_ds.create_region_mask()
     assert isinstance(artmip_ds.region_mask_ds, xr.DataArray)
     assert artmip_ds.region_mask_ds.shape == artmip_ds.ar_id_ds.ar_unique_id.shape[1:]
+
+
+def test_select_region_ars() -> None:
+    artmip_ds.select_region_ars()
+    test_ds = artmip_ds.region_ar_ds
+    assert isinstance(test_ds, xr.Dataset)
+    assert test_ds.time.dt.year[0].values == 1980
+    assert test_ds.time.dt.year[-1].values == 2019
+    assert list(test_ds.variables.keys()) == ["ar_unique_id", "lat", "lon", "time"]
+
 
 logger.info("Finished testing")

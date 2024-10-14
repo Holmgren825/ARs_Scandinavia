@@ -3,7 +3,7 @@
 import logging
 import os
 import re
-from typing import Self, TypedDict, Union, Literal, Optional
+from typing import Literal, Optional, Self, TypedDict, Union
 
 import dask.array as da
 import numpy as np
@@ -21,7 +21,7 @@ class PathDict(TypedDict):
 
     artmip_dir: str
     project_dir: str
-    # region_ar_fname: str
+    region_name: str
     # What else is needed here?
 
 
@@ -34,6 +34,7 @@ class ArtmipDataset:
         region_shp: Optional[GeometryCollection] = None,
         overwrite: bool = False,
         n_year_batch: int = 1,
+        time_thin: Optional[int] = None,
     ) -> None:
         # NOTE: We can't do an instance check on typed dicts.
         if isinstance(path_dict, dict):
@@ -50,6 +51,10 @@ class ArtmipDataset:
 
         if isinstance(n_year_batch, int):
             self.n_year_batch = n_year_batch
+        if isinstance(time_thin, int):
+            self.time_thin: Optional[int] = time_thin
+        else:
+            self.time_thin = None
 
         self.ardt_name = self._extract_ardt_name()
 
@@ -122,7 +127,6 @@ class ArtmipDataset:
         show_progress: bool = False,
         first_year: Union[int | None] = None,
         last_year: Union[int | None] = None,
-        time_thin: int = 6,
     ) -> None:
         """Get AR feature ids from ARTMIP data."""
         # NOTE: This was done through a separate script, but should be a part of this pipeline now.
@@ -131,11 +135,16 @@ class ArtmipDataset:
             raise AttributeError(
                 "ar_tag_ds has not be initiated for the ArtmipDataset, run the preprocessor."
             )
+        if self.time_thin is None:
+            raise AttributeError(
+                "Attribute time_thin of ArtmipDataset is None, should be int."
+            )
+
         tag_ds = self.ar_tag_ds
-        tag_ds = tag_ds.thin({"time": time_thin})
+        tag_ds = tag_ds.thin({"time": self.time_thin})
 
         timerange_str = self._get_timerange_str(tag_ds)
-        ar_id_fname = self._create_ar_id_fname(time_thin)
+        ar_id_fname = self._create_ar_id_fname(self.time_thin)
         store_path = (
             os.path.join(self.path_dict["artmip_dir"], ar_id_fname)
             + timerange_str
@@ -232,20 +241,44 @@ class ArtmipDataset:
             dims=["lat", "lon"],
             coords={"lon": self.ar_id_ds.lon, "lat": self.ar_id_ds.lat},
         )
+        logger.info("End: Create region mask.")
 
     def select_region_ars(self: Self) -> None:
         """Select ID numbers of ARs that intersect the specified region (region_mask)."""
         if self.ar_id_ds is None:
             raise AttributeError("ar_id_ds is not initiated for ArtmipDataset")
+        if self.region_mask_ds is None:
+            raise AttributeError("region_mask_ds is not initiated for ArtmipDataset")
+        if self.time_thin is None:
+            raise AttributeError(
+                "Attribute time_thin of ArtmipDataset is None, should be int."
+            )
+        logger.info("Start: Select region ARs.")
 
-        ids = da.unique(
-            self.ar_id_ds.ar_features.where(self.region_mask_ds, np.nan).data
+        timerange_str = self._get_timerange_str(self.ar_id_ds)
+        fname = self._create_ar_id_fname(self.time_thin)
+        fname += f".{self.path_dict['region_name']}"
+        store_path = (
+            os.path.join(self.path_dict["artmip_dir"], fname) + timerange_str + ".zarr"
         )
-        ids = ids.compute()
-        mask_isin = da.isin(self.ar_id_ds.ar_feautures.data, ids[1:-1])
-        region_ars = self.ar_id_ds.ar_feautures.where(mask_isin, np.nan)
-        region_ars.name = "ar_features"
-        self.region_ar_ds = region_ars
+        if self.overwrite or not os.path.exists(store_path):
+            if self.overwrite:
+                mode: Union[Literal["w"] | None] = "w"
+                logger.info(f"Will overwrite store {store_path}")
+            else:
+                mode = None
 
-    def _extract_fname(self: Self) -> str:
-        raise NotImplementedError
+            ids = da.unique(
+                self.ar_id_ds.ar_unique_id.where(self.region_mask_ds, np.nan).data
+            )
+            logger.info("Computing region AR ids.")
+            ids = ids.compute()
+            mask_isin = da.isin(self.ar_id_ds.ar_unique_id.data, ids[1:-1])
+            region_ars = self.ar_id_ds.ar_unique_id.where(mask_isin, np.nan)
+            logger.info("Saving to zarr store.")
+            region_ars.to_zarr(store_path, mode=mode)
+        else:
+            logger.info(f"Store {store_path} already exist.")
+
+        self.region_ar_ds = xr.open_zarr(store_path)
+        logger.info("End: Select region ARs.")
