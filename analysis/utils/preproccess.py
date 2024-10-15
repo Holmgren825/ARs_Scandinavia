@@ -3,18 +3,15 @@
 import logging
 import os
 import re
-from collections import deque
 from itertools import repeat
 from typing import (
     Hashable,
-    Iterable,
     Literal,
     Mapping,
     Optional,
     Self,
     TypedDict,
     Union,
-    Generator,
 )
 
 import dask.array as da
@@ -262,11 +259,11 @@ class ArtmipDataset:
                 if isinstance(features, xr.DataArray):
                     features = features.rechunk((1, -1, -1))
 
+                id_uniqify = tag_ds_sel["time.year"].values.reshape((-1, 1, 1))
+                id_uniqify += i * 1000
                 features = da.where(
                     features > 0,
-                    uniquify_id(
-                        tag_ds_sel["time.year"].values.reshape((-1, 1, 1)), features
-                    ),
+                    uniquify_id(id_uniqify, features),
                     0,
                 )
 
