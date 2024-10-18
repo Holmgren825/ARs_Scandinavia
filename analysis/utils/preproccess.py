@@ -163,12 +163,15 @@ class ArtmipDataset:
                 "Attribute time_thin of ArtmipDataset is None, should be int."
             )
 
+        # TODO: This should only run if we overwrite/create a new ds?
         ds_raw = self._load_artmip_ds()
         # NOTE:Have to chunk the data since chunks are likely unequal,
         # which is not allowed by zarr.
         # We should chunk this as if it was int64, not int8.
         ds = ds_raw.thin({"time": self.time_thin})
-        preferred_chunksizes = ds.astype("int64").chunk("auto").chunksizes
+        preferred_chunksizes = (
+            ds.astype("int64").chunk({"time": "auto", "lat": -1, "lon": -1}).chunksizes
+        )
         ds = ds.chunk(preferred_chunksizes)
 
         timerange_str = self._get_timerange_str(ds)
@@ -189,18 +192,51 @@ class ArtmipDataset:
         self.ar_tag_ds = xr.open_zarr(store_path)
 
     def _load_artmip_ds(self: Self) -> xr.Dataset:
+        logger.info(f"ardt_name {self.path_dict}")
         artmip_files = os.path.join(self.path_dict["artmip_dir"], self.ardt_name)
         artmip_files = artmip_files + ".*.nc"
-        raw_ds = xr.open_mfdataset(artmip_files)
-        if not list(raw_ds.variables.keys()) == [
+        logger.info(f"Looking for files in {artmip_files}")
+        try:
+            raw_ds = xr.open_mfdataset(artmip_files)
+        except ValueError as e:
+            if (
+                str(e)
+                == "Failed to decode variable 'time': unable to decode time units 'time:units = hours since 198001-01 00:00:00' with \"calendar 'standard'\". Try opening your dataset with decode_times=False or installing cftime if it is not installed."
+            ):
+                logger.info(
+                    "Encounterd a non-standard calendar, looking for fixed data."
+                )
+                artmip_files = os.path.join(
+                    self.path_dict["artmip_dir"], self.ardt_name
+                )
+                artmip_files = artmip_files + ".*.tfix.nc"
+                raw_ds = xr.open_mfdataset(artmip_files)
+            else:
+                raise ValueError(
+                    "Encountered a non-standard calendar, manual invervention needed."
+                ) from e
+
+        available_variables = list(raw_ds.variables.keys())
+        required_variables = [
             "ar_binary_tag",
             "lat",
             "lon",
             "time",
-        ]:
+        ]
+        all_var_available = all(
+            map(lambda v: v in available_variables, required_variables)
+        )
+        if not all_var_available:
             raise ValueError(
-                "The originial artmip catalog does not contain the correct variables."
+                f"The originial artmip catalog does not contain the correct variables: {list(raw_ds.variables.keys())}."
             )
+
+        # NOTE: Catch missing lat/lon data at this stage.
+        if np.all(raw_ds.lon.values > 1e3) and np.all(raw_ds.lat.values > 1e3):
+            logger.info(
+                "Detected missing coordinate data, trying to fill, assuming ERA5 data."
+            )
+            raw_ds = fill_coordinates(raw_ds)
         return raw_ds
 
     def get_unique_ar_ids(
@@ -372,3 +408,22 @@ class ArtmipDataset:
     ) -> str:
         """Generate a filename from fname_params separated using sep."""
         return sep.join(fname_params)
+
+
+def fill_coordinates(ds: xr.Dataset) -> xr.Dataset:
+    """Fill missing coordinates. Assume that data is ERA5."""
+    new_lats = np.arange(-90, 90.25, 0.25)
+    new_lons = np.arange(-180, 180, 0.25)
+    ds = ds.assign_coords(lat=new_lats, lon=new_lons)
+    ds.lat.attrs = {
+        "long_name": "latitude",
+        "standard_name": "latitude",
+        "units": "degrees_north",
+    }
+    ds.lon.attrs = {
+        "long_name": "longitude",
+        "standard_name": "longitude",
+        "units": "degrees_east",
+    }
+
+    return ds
