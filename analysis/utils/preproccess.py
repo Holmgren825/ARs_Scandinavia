@@ -17,10 +17,12 @@ from typing import (
 import dask.array as da
 import numpy as np
 import xarray as xr
+import pandas as pd
 from ar_identify.feature import _get_labels
 from ar_identify.utils import uniquify_id
 from numpy.typing import NDArray
-from shapely.geometry import GeometryCollection, MultiPoint
+from shapely.geometry import MultiPoint
+from shapely.geometry.base import BaseGeometry
 from tqdm.autonotebook import tqdm
 
 logger = logging.getLogger(__name__)
@@ -41,7 +43,7 @@ class ArtmipDataset:
     def __init__(
         self: Self,
         path_dict: PathDict,
-        region_shp: Optional[GeometryCollection] = None,
+        region_shp: Optional[BaseGeometry] = None,
         overwrite: bool = False,
         n_batch_chunks: int = 20,
         time_thin: Optional[int] = None,
@@ -54,10 +56,10 @@ class ArtmipDataset:
             raise TypeError("path_dict should be a dictionary")
 
         if region_shp is not None:
-            if isinstance(region_shp, GeometryCollection):
+            if isinstance(region_shp, BaseGeometry):
                 self.region_shp = region_shp
             else:
-                raise TypeError("region_shp should be a GeometryCollection")
+                raise TypeError("region_shp should be a BaseGeometry")
 
         if isinstance(n_batch_chunks, int):
             self.n_batch_chunks = n_batch_chunks

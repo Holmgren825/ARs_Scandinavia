@@ -1,9 +1,7 @@
 """Some utlities for doing a PCA analysis on atmospheric rivers and precipitation."""
 
-from typing import Optional, Literal
-
 import os
-from typing import Self, Sequence, Union
+from typing import Literal, Optional, Self, Sequence, Union
 
 import xarray as xr
 import xeofs as xe  # type: ignore
@@ -23,7 +21,7 @@ class ComputePCA:
         normalize: bool = True,
         sample_dim: str = "time",
     ) -> None:
-        """"""
+        """Compute PCAs for a ARTMIP dataset."""
         if isinstance(data, xr.DataArray) or isinstance(data, list):
             self.data = data
         else:
