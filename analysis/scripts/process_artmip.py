@@ -2,18 +2,19 @@
 
 import logging
 
-import geopandas as gpd
+import geopandas as gpd  # type: ignore
 from dask.distributed import Client
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from tqdm.autonotebook import tqdm
-from utils.preproccess import ArtmipDataset, PathDict
+
+from ..utils.preproccess import ArtmipDataset, PathDict
 
 ARTMIP_PATHS = [
     # "/data/atmospheric_rivers/artmip/ERA5.ar.Mundhenk_v3.1hr/",
     # "/data/atmospheric_rivers/artmip/ERA5.ar.Reid500.1hr/",
     # "/data/atmospheric_rivers/artmip/ERA5.ar.GuanWaliser_v2.1hr/",
-    # TODO: This one requires some lat/lons.
+    # NOTE: This one requires some lat/lons.
     "/data/atmospheric_rivers/artmip/ERA5.ar.TempestLR.1hr/",
 ]
 
@@ -50,7 +51,7 @@ def main() -> None:
         ar_ds = ArtmipDataset(path_dict=path_dict, time_thin=6, overwrite=False)
         logger.info(ar_ds.ardt_raw_name)
 
-        region_shp = generate_shp()
+        region_shp: BaseGeometry = generate_shp()
 
         ar_ds.preprocess_artmip_catalog()
         ar_ds.get_unique_ar_ids()

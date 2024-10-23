@@ -10,10 +10,11 @@ import dask.array as da
 import xarray as xr
 import xeofs as xe  # type: ignore
 from dask.distributed import Client
-from process_artmip import generate_shp
 from tqdm import tqdm
-from utils.pca_utils import ComputePCA
-from utils.preproccess import ArtmipDataset, PathDict
+
+from ..utils.pca_utils import ComputePCA
+from ..utils.preproccess import ArtmipDataset, PathDict
+from .process_artmip import generate_shp
 
 ARTMIP_PATHS = [
     "/data/atmospheric_rivers/artmip/ERA5.ar.Mundhenk_v3.1hr/",

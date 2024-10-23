@@ -17,7 +17,6 @@ from typing import (
 import dask.array as da
 import numpy as np
 import xarray as xr
-import pandas as pd
 from ar_identify.feature import _get_labels
 from ar_identify.utils import uniquify_id
 from numpy.typing import NDArray
@@ -57,7 +56,7 @@ class ArtmipDataset:
 
         if region_shp is not None:
             if isinstance(region_shp, BaseGeometry):
-                self.region_shp = region_shp
+                self.region_shp: BaseGeometry = region_shp
             else:
                 raise TypeError("region_shp should be a BaseGeometry")
 
