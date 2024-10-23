@@ -14,6 +14,7 @@ from ar_scandinavia.preproccess import ArtmipDataset, PathDict
 from dask.distributed import Client
 from process_artmip import generate_shp
 from tqdm import tqdm
+from xr_utils.coordinates import conv_lon_to_180
 
 ARTMIP_PATHS = [
     "/data/atmospheric_rivers/artmip/ERA5.ar.Mundhenk_v3.1hr/",
@@ -152,13 +153,7 @@ def subsel_ds(ds: xr.DataArray) -> xr.DataArray:
     """Generate a subselection of given dataset."""
     if ds.cf["longitude"].values[-1] > 359:
         logger.info("0-360 coordinates detected, converting.")
-        ds = ds.assign_coords(
-            {
-                ds.cf.coordinates["longitude"][0]: ((ds.cf["longitude"] - 180) % 360)
-                - 180
-            }
-        )
-        ds = ds.sortby(ds.cf["longitude"])
+        ds = conv_lon_to_180(ds)
 
     if ds.cf["latitude"].values[0] > ds.cf["latitude"].values[1]:
         logger.info("90 to -90 latitude detected, chaning slice order.")

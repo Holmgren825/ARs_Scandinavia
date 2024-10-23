@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 def main() -> None:
     """Compute NAO-group frequencies for ARTMIP datasets."""
-    logging.basicConfig(filename="compute_nao_groups.log", level=logging.INFO)
+    logging.basicConfig(filename=Path(__file__).parent / "logs/compute_nao_groups.log", level=logging.INFO)
 
 
     client = Client(n_workers=7, threads_per_worker=4, memory_limit="8GB")
@@ -72,6 +72,7 @@ def main() -> None:
             logger.info("END: Computing NAO group frequencies.")
 
             logger.info("START: Saving results.")
+            nao_freqs["nao_bins"] = nao_freqs.nao_bins.astype(str)
             nao_freqs.to_zarr(path)
             logger.info("END: Saving PCA results.")
         else:
