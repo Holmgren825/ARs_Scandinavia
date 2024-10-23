@@ -106,7 +106,7 @@ class ComputePCA:
     def save(self: Self, mode: Optional[Literal["w"]] = None) -> None:
         """Save the results of the PCA analysis."""
         for dataset_list, fname in zip(
-            self.pca_results, ["comp_name", "exp_var_name", "scores_name"]
+            self.pca_results, ["comp_name", "exp_var_name", "scores_name"], strict=False
         ):
             dataset = self.result_to_ds(dataset_list, fname)
             path = os.path.join(self.base_path, self.result_fnames[fname])

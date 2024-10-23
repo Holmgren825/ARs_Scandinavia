@@ -1,14 +1,14 @@
 """Preprocessing pipeline for artmip datasets."""
 
 import logging
+from pathlib import Path
 
 import geopandas as gpd  # type: ignore
+from ar_scandinavia.preproccess import ArtmipDataset, PathDict
 from dask.distributed import Client
 from shapely.geometry.base import BaseGeometry
 from shapely.ops import unary_union
 from tqdm.autonotebook import tqdm
-
-from ..utils.preproccess import ArtmipDataset, PathDict
 
 ARTMIP_PATHS = [
     # "/data/atmospheric_rivers/artmip/ERA5.ar.Mundhenk_v3.1hr/",
@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 
 def generate_shp() -> BaseGeometry:
     # Pytest root dir is project root dir.
-    gdf = gpd.read_file("../etc/ne_50_admin_0_countries/ne_50m_admin_0_countries.shp")
+    gdf = gpd.read_file(Path(__file__).parent / "../etc/ne_50_admin_0_countries/ne_50m_admin_0_countries.shp")
     scand_gdf = gdf[
         (gdf["ADMIN"] == "Sweden")
         + (gdf["ADMIN"] == "Norway")

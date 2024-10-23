@@ -9,12 +9,11 @@ import cf_xarray as cfxr
 import dask.array as da
 import xarray as xr
 import xeofs as xe  # type: ignore
+from ar_scandinavia.pca_utils import ComputePCA
+from ar_scandinavia.preproccess import ArtmipDataset, PathDict
 from dask.distributed import Client
+from process_artmip import generate_shp
 from tqdm import tqdm
-
-from ..utils.pca_utils import ComputePCA
-from ..utils.preproccess import ArtmipDataset, PathDict
-from .process_artmip import generate_shp
 
 ARTMIP_PATHS = [
     "/data/atmospheric_rivers/artmip/ERA5.ar.Mundhenk_v3.1hr/",
@@ -96,7 +95,7 @@ def main() -> None:
         if not len(pca_data) == len(filename_args):
             raise ValueError("pca_data should be same length as filename_args")
 
-        for data, filename_arg in zip(pca_data, filename_args):
+        for data, filename_arg in zip(pca_data, filename_args, strict=False):
             model = xe.single.EOF(n_modes=10, use_coslat=True, standardize=True)
 
             combined_pca = isinstance(data, list)

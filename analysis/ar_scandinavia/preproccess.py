@@ -280,7 +280,7 @@ class ArtmipDataset:
             iter_blocks = self._generate_iter_blocks(self.ar_tag_ds.chunksizes)
             for i, (time_slice, lat_slice, lon_slice) in tqdm(
                 enumerate(
-                    zip(iter_blocks["time"], iter_blocks["lat"], iter_blocks["lon"])
+                    zip(iter_blocks["time"], iter_blocks["lat"], iter_blocks["lon"], strict=False)
                 ),
                 disable=not show_progress,
             ):

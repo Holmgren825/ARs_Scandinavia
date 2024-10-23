@@ -1,3 +1,14 @@
+[build-system]
+requires = ["setuptools", "setuptools-scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ar_scandinavia"
+version = "0.0.1"
+requires-python = ">=3.10"
+
+[tool.setuptools.packages.find]
+where = ["analysis/"]
 
 [tool.ruff]
 # Enable flake8-bugbear (`B`) rules.
