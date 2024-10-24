@@ -25,6 +25,8 @@ ARTMIP_PATHS = [
 
 
 OVERWRITE = False
+START_YEAR = "1980"
+END_YEAR = "2019"
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ def main() -> None:
     logging.basicConfig(filename=Path(__file__).parent / "logs/compute_nao_groups.log", level=logging.INFO)
 
 
-    client = Client(n_workers=7, threads_per_worker=4, memory_limit="8GB")
+    client = Client(n_workers=6, threads_per_worker=4, memory_limit="8GB")
 
 
     for artmip_path in tqdm(ARTMIP_PATHS):
@@ -54,7 +56,9 @@ def main() -> None:
         if ar_ds.region_ar_ds is None:
             raise AttributeError("No region_ar_ds available for ArtmpDataset.")
 
-        nao_series = prepare_nao_ds(ar_ds.region_ar_ds.ar_unique_id)
+        # INFO: Have to select the same years here.
+        ar_da = ar_ds.region_ar_ds.ar_unique_id.sel(time=slice(START_YEAR, END_YEAR))
+        nao_series = prepare_nao_ds(ar_da)
         nao_bins = get_nao_bins(nao_series)
 
         fname = get_filename(ar_ds)
@@ -65,15 +69,15 @@ def main() -> None:
         if not os.path.exists(path) or OVERWRITE:
             logger.info("START: Computing NAO group frequencies.")
 
-            nao_freqs = ar_ds.region_ar_ds.assign_coords({"nao": ("time", nao_series.to_numpy())})
-            nao_freqs = nao_freqs.ar_unique_id.groupby_bins("nao", nao_bins).map(calc_ar_freqs)
+            nao_freqs = ar_da.assign_coords({"nao": ("time", nao_series.to_numpy())})
+            nao_freqs = nao_freqs.groupby_bins("nao", nao_bins).map(calc_ar_freqs)
             nao_freqs = nao_freqs.compute()
 
             logger.info("END: Computing NAO group frequencies.")
 
             logger.info("START: Saving results.")
             nao_freqs["nao_bins"] = nao_freqs.nao_bins.astype(str)
-            nao_freqs.to_zarr(path)
+            nao_freqs.to_zarr(path, mode="w")
             logger.info("END: Saving PCA results.")
         else:
             logger.info("Results already exists, skipping.")
