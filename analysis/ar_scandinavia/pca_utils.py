@@ -1,6 +1,7 @@
 """Some utlities for doing a PCA analysis on atmospheric rivers and precipitation."""
 
 import os
+import re
 from typing import Literal, Optional, Self, Sequence, Union
 
 import xarray as xr
@@ -159,3 +160,19 @@ def combined_eof_result_list_to_ds(result_list: list) -> xr.Dataset:
                 raise
     result_list_ds = xr.combine_nested(result_list, concat_dim=["rotation", "variable"])
     return result_list_ds
+
+
+def combine_artmip_pca_results(file_list: list[str]) -> xr.Dataset:
+    """Combine results [eof, exp_var or scores] from different ARTMIP ARDTs into a single Dataset."""
+    res_list = []
+    for file in file_list:
+        ds = xr.open_zarr(file)
+        ardt_match = re.search(r"ERA5\..*(?=/)", file)
+        if ardt_match is None:
+            raise ValueError("no match found in regex.")
+        ardt_name = ardt_match.group()
+        ds = ds.assign_coords({"ARDT": ardt_name})
+        res_list.append(ds)
+
+    ds = xr.concat(res_list, dim="ARDT").load()
+    return ds
