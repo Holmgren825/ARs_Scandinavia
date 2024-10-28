@@ -65,21 +65,19 @@ def main() -> None:
         ar_ds_sel = subsel_ds(
             ar_ds.region_ar_ds, LAT_SLICE, LON_SLICE, START_YEAR, END_YEAR
         )
+        ar_ds_sel.ar_unique_id.data = da.where(ar_ds_sel.ar_unique_id.data > 0, 1, 0)
+        ar_ds_sel = ar_ds_sel.fillna(0)
         for resample in RESAMPLE:
             fname = get_filename(ar_ds, resample)
-
             path = os.path.join(ar_ds.ardt_proj_dir, fname)
 
             if not os.path.exists(path) or OVERWRITE:
                 logger.info(f"START: kmeans {ar_ds.ardt_name}, {resample}.")
-                ar_ds_sel.ar_unique_id.data = da.where(
-                    ar_ds_sel.ar_unique_id.data > 0, 1, 0
-                )
-                ar_ds_sel = ar_ds_sel.fillna(0)
 
-                ar_data: da.Array = (
-                    ar_ds_sel.resample(time=resample).sum().ar_unique_id.data
+                ar_ds_sel_resample = (
+                    ar_ds_sel.resample(time=resample).sum().ar_unique_id
                 )
+                ar_data = ar_ds_sel_resample.data
                 ar_data = ar_data.reshape(ar_data.shape[0], -1)
                 logger.info("Persisting AR data to cluster.")
                 ar_data = ar_data.persist()
@@ -92,7 +90,7 @@ def main() -> None:
                 labels = kmeans.predict(ar_data)
 
                 res_ds = xr.DataArray(
-                    labels, coords={"time": ar_ds_sel.time}, name="labels"
+                    labels, coords={"time": ar_ds_sel_resample.time}, name="labels"
                 )
                 res_ds.time.attrs = {"standard_name": "time", "long_name": "Time"}
 
@@ -101,7 +99,7 @@ def main() -> None:
                 logger.info("END: Saving labels")
                 logger.info("END: kmeans")
             else:
-                logger.info(f"{fname} cluster labels already exists.")
+                logger.info(f"{fname}, {resample} cluster labels already exists.")
 
     client.shutdown()
 
