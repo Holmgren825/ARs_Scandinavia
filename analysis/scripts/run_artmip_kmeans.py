@@ -95,9 +95,11 @@ def main() -> None:
                 res_ds.time.attrs = {"standard_name": "time", "long_name": "Time"}
 
                 logger.info("START: Saving labels")
-                res_ds.to_zarr(path, mode="w")
+                res_ds.chunk("auto").to_zarr(path, mode="w")
                 logger.info("END: Saving labels")
                 logger.info("END: kmeans")
+                # NOTE: It is good practice to realease data that has been persisted to the cluster.
+                del ar_data
             else:
                 logger.info(f"{fname}, {resample} cluster labels already exists.")
 
