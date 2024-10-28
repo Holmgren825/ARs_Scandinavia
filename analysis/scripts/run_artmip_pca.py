@@ -30,7 +30,7 @@ LON_SLICE = (-10, 45)
 
 START_YEAR = "1980"
 END_YEAR = "2019"
-RESAMPLE = "5d"
+RESAMPLE = ["2d","5d", "10d", "15d", "20d"]
 OVERWRITE = False
 
 logger = logging.getLogger(__name__)
@@ -79,19 +79,21 @@ def main() -> None:
         pr_ds_sel = pr_ds_sel.persist()
         logger.info("END: Persisting data before PCA computation.")
 
-        ar_ds_sel_resample = ar_ds_sel.resample(time=RESAMPLE, label="right").sum()
-        pr_ds_sel_resample = pr_ds_sel.resample(time=RESAMPLE, label="right").sum()
-
         pca_data = [
             ar_ds_sel.ar_unique_id,
             [ar_ds_sel.ar_unique_id, pr_ds_sel.tp],
-            [ar_ds_sel_resample.ar_unique_id, pr_ds_sel_resample.tp],
         ]
-        filename_args = (
+        filename_args = [
             "std",
             "ERA5_precip.std",
-            f"ERA5_precip.{RESAMPLE}_resample.std",
-        )
+        ]
+
+        for resample in RESAMPLE:
+            ar_ds_sel_resample = ar_ds_sel.resample(time=resample, label="right").sum()
+            pr_ds_sel_resample = pr_ds_sel.resample(time=resample, label="right").sum()
+            pca_data.append([ar_ds_sel_resample.ar_unique_id, pr_ds_sel_resample.tp])
+            filename_args.append(f"ERA5_precip.{resample}_resample.std")
+
 
         if not len(pca_data) == len(filename_args):
             raise ValueError("pca_data should be same length as filename_args")
