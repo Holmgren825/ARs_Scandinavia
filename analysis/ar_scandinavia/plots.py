@@ -7,14 +7,14 @@ from cartopy.mpl.geocollection import QuadMesh  # type: ignore
 
 
 def cluster_plot(
-    ar_vals: list[xr.Dataset],
-    pr_vals: list[xr.Dataset],
+    ar_vals: list[xr.DataArray],
+    pr_vals: list[xr.DataArray],
     ar_ds: xr.Dataset,
     ardt_name: str,
     tot_pr: xr.Dataset,
     cluster_counts: np.ndarray,
     resample_id: str,
-    n_clusters: np.ndarray,
+    n_clusters: int,
     lat_slice: tuple[int, int],
     lon_slice: tuple[int, int],
 ) -> pplt.Figure:
@@ -102,6 +102,6 @@ def cluster_plot(
         # toplabelpad="20mm",
     )
     fig.format(
-        suptitle=f"AR and precipitation | ARDT: {ardt_name}",
+        suptitle=f"AR and precipitation | ARDT: {ardt_name}, {resample_id}",
     )
     return fig
