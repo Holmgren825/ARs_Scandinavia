@@ -45,15 +45,22 @@ def main() -> None:
 
     tot_pr = precip_ds.sum("time").load()
 
-    for ardt_name, resample_id in tqdm(product(ARDT_NAMES, RESAMPLE_IDS)):
+    for ardt_name, resample_id in tqdm(
+        product(ARDT_NAMES, RESAMPLE_IDS), total=len(ARDT_NAMES) * len(RESAMPLE_IDS)
+    ):
         label_path = os.path.join(
             BASE_PATH,
             f"ERA5.{ardt_name}/ERA5.ar.{ardt_name}.{resample_id}.cluster_labels.zarr/",
         )
+        if ardt_name != "GuanWaliser_v2":
+            ardt_path = f"ERA5.{ardt_name}/ERA5.ar_id.{ardt_name}.6hr.scand_ars.19800101-20191231.zarr/"
+        else:
+            ardt_path = f"ERA5.{ardt_name}/ERA5.ar_id.{ardt_name}.6hr.scand_ars.19790101-20191231.zarr/"
         ar_path = os.path.join(
             BASE_PATH,
-            f"ERA5.{ardt_name}/ERA5.ar_id.{ardt_name}.6hr.scand_ars.19800101-20191231.zarr/",
+            ardt_path,
         )
+
         fig_path = f"../../figures/ar_pr_clusters_{ardt_name}-{resample_id}.svg"
         if not os.path.exists(fig_path) or OVERWRITE:
             logger.info(f"Open and compute {ardt_name}, {resample_id}")
