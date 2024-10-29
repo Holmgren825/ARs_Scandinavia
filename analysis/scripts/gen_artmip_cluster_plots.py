@@ -2,12 +2,10 @@
 
 import logging
 import os
-import re
 from itertools import product
 from pathlib import Path
 
 import cf_xarray as cfxr
-import dask.array as da
 import xarray as xr
 from ar_scandinavia.plots import cluster_plot
 from ar_scandinavia.utils import compute_ar_pr_values, subsel_ds

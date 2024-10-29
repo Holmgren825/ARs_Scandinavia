@@ -38,6 +38,7 @@ def cluster_plot(
             cmap="fire",
             add_colorbar=False,
             vmin=0,
+            rasterized=True,
         )
         axs[cluster_id, 0].format(
             title=f"n: {curr_cluster_counts} [{curr_cluster_counts/n_timesteps*100:.2f}%]"
@@ -63,11 +64,12 @@ def cluster_plot(
         )
 
         # Total precipitation fraction
-        pr_cm: QuadMesh = pr_vals[cluster_id].plot(
+        pr_cm = pr_vals[cluster_id].plot(
             ax=axs[cluster_id, 1],
             cmap="oslo_r",
             add_colorbar=False,
             vmin=0,
+            rasterized=True,
         )
 
         pr_cbar = axs[cluster_id, 1].colorbar(
