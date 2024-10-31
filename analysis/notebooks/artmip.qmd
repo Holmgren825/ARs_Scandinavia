@@ -41,7 +41,8 @@ base_path = "/data/atmospheric_rivers/artmip/"
 ```
 
 ```{python}
-path_zarr = "/data/atmospheric_rivers/artmip/ERA5.ar_tag.GuanWaliser_v2.1hr.19790101-20191231.zarr"
+#path_zarr = "/data/atmospheric_rivers/artmip/ERA5.ar_tag.GuanWaliser_v2.1hr.19790101-20191231.zarr"
+path_zarr = "/data/atmospheric_rivers/artmip/ERA5.ar.GuanWaliser_v2.1hr/ERA5.ar_tag.GuanWaliser_v2.1hr.19790101-20191231.zarr/"
 ```
 
 ```{python}
@@ -65,7 +66,7 @@ We assign unique IDs to each AR object using the script `get_guan_walliser_ar_id
 
 ```{python}
 ds_feature = xr.open_zarr(
-    "/data/atmospheric_rivers/artmip/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231.zarr",
+    "/data/atmospheric_rivers/artmip/ERA5.ar.GuanWaliser_v2.1hr/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231.zarr",
 )
 ```
 
@@ -151,6 +152,7 @@ ids = da.unique(ds_feature.ar_feautures.where(mask, np.nan).data)
 
 ```{python}
 #| eval: false
+#| jupyter: {outputs_hidden: true}
 ids = ids.compute()
 ```
 
@@ -176,7 +178,7 @@ scand_ars.to_zarr(
 
 ```{python}
 scand_ars = xr.open_zarr(
-    "/data/projects/atmo_rivers_scandinavia/ERA5_ar_ids_GuanWaliser_v2_6hr_19790101-20191231_scandinavia.zarr",
+    "/data/projects/atmo_rivers_scandinavia/ERA5.GuanWaliser_v2/ERA5_ar_ids_GuanWaliser_v2_6hr_19790101-20191231_scandinavia.zarr",
 )
 ```
 
@@ -185,8 +187,12 @@ scand_ars.ar_features
 ```
 
 ```{python}
-fig, ax = pplt.subplots(proj="robin")
-scand_ars.ar_features.isel(time=-1).plot()
+fig, axs = pplt.subplots(ncols=2, figheight="10cm", proj="robin")
+
+idx = 5005
+scand_ars.ar_features.isel(time=idx).plot(ax=axs[0])
+ds_feature.ar_feautures.isel(time=idx).plot(ax=axs[1])
+axs.format(coast=True, reso="med")
 ```
 
 ### Annual frequencies {.hidden}
@@ -520,4 +526,3 @@ axs[2].format(
 fig.legend(handles, labels, ncols=2, loc="b", label="Bin limits")
 fig.format(suptitle="AR frequencies grouped by NAO")
 ```
-

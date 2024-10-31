@@ -167,15 +167,11 @@ Convert Scandinavian ARs to a binary mask.
 ```{python}
 #| eval: false
 sel_ds.ar_features.data = da.where(sel_ds.ar_features.data > 0, 1, 0)
-```
 
-```{python}
 #| eval: false
 sel_ds = sel_ds.fillna(0)
 sel_pr_ds = sel_pr_ds.fillna(0)
-```
 
-```{python}
 #| eval: false
 sel_ds = sel_ds.persist()
 sel_pr_ds = sel_pr_ds.persist()

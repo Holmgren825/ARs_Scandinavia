@@ -1,0 +1,175 @@
+---
+title: ARTMIP NAO analysis
+author: Erik Holmgren
+format:
+  html:
+    code-fold: show
+    toc: true
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .qmd
+      format_name: quarto
+      format_version: '1.0'
+      jupytext_version: 1.16.4
+  kernelspec:
+    display_name: ar_ident
+    language: python
+    name: ar_ident
+---
+
+```{python}
+import re
+from glob import glob
+from pathlib import Path
+
+import cf_xarray
+import numpy as np
+import pandas as pd
+import proplot as pplt
+import xarray as xr
+from ar_scandinavia.pca_utils import combine_artmip_pca_results
+from cartopy import crs as ccrs
+from xr_utils.coordinates import conv_lon_to_180
+```
+
+```{python}
+BASE_PATH = "/data/projects/atmo_rivers_scandinavia/"
+```
+
+```{python}
+def prepare_nao_ds(path: str | None = None) -> pd.Series:
+    """Prepare NAO dataframe."""
+    if path is None:
+        path = Path(__file__).parent / "../etc/norm_daily_nao_index_1950_2024.txt"
+
+    nao_df: pd.DataFrame = pd.read_csv(
+        filepath_or_buffer=path,
+        sep=r"\s+",
+        header=None,
+        names=["year", "month", "day", "nao"],
+        dtype={"year": str, "month": str, "day": str, "nao": float},
+        na_values="-99.0",
+    )
+    nao_df["time"] = pd.to_datetime(
+        nao_df["year"] + "-" + nao_df["month"] + "-" + nao_df["day"]
+    )
+    nao_df.index = pd.Index(nao_df.time)
+    nao_series = nao_df["nao"]
+    nao_series = nao_series.interpolate()
+
+    # Upsample to 6 hourly for convenience with era5 data.
+    nao_series = nao_series.resample("6h").ffill()
+
+    # first_timestep = ar_ds.time[:1].to_numpy()[0]
+    # last_timestep = ar_ds.time[-1:].to_numpy()[0]
+
+    # # What year do we need?
+    # nao_series = nao_series.loc[first_timestep:last_timestep]
+
+    return nao_series
+
+
+def get_nao_bins(nao_series: pd.Series, midpoint_qtile: float = 0.4524) -> np.ndarray:
+    """Generate NAO bins with roughly equal number of samples on either side of 0."""
+    # TODO: Don't hard code midpoint.
+    bins = np.quantile(
+        nao_series,
+        [
+            0,
+            midpoint_qtile / 2,
+            midpoint_qtile,
+            midpoint_qtile + (1 - midpoint_qtile) / 2,
+            1,
+        ],
+    )
+    return bins
+```
+
+```{python}
+nao_series = prepare_nao_ds(path="../etc/norm_daily_nao_index_1950_2024.txt")
+```
+
+```{python}
+nao_series = nao_series.loc["1980":"2019"]
+```
+
+```{python}
+nao_bins = get_nao_bins(nao_series)
+```
+
+```{python}
+hist, bins = np.histogram(nao_series, nao_bins)
+```
+
+# AR NAO frequencies
+
+```{python}
+nao_freqs = glob(BASE_PATH + "ERA5*/ERA5.ar.*.nao_group_freqs.zarr")
+```
+
+```{python}
+nao_freqs_ds = combine_artmip_pca_results(nao_freqs)
+```
+
+```{python}
+LAT_SLICE = (50, 74)
+LON_SLICE = (-10, 45)
+```
+
+```{python}
+ncols = 4
+nrows = 5
+nao_labels = ["NAO--", "NAO-", "NAO+", "NAO++"]
+projs = ["nsper"] * 16 + [None] * 4
+fig, axs = pplt.subplots(
+    ncols=ncols,
+    nrows=nrows,
+    refwidth="8cm",
+    proj=projs,
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    abc=True,
+)
+cmap = pplt.Colormap("Dusk")
+
+
+for row in range(nrows - 1):
+    for col in range(ncols):
+        cm = (
+            nao_freqs_ds.isel(ARDT=col, nao_bins=row)["AR frequency"] / hist[row] * 100
+        ).plot(
+            cmap=cmap,
+            vmin=0,
+            vmax=20,
+            add_colorbar=False,
+            rasterized=True,
+            ax=axs[row, col],
+        )
+        axs[row, col].format(title="")
+
+        (nao_freqs_ds.isel(ARDT=row, nao_bins=col) / hist[col] * 100)[
+            "AR frequency"
+        ].plot.hist(ax=axs[-1, row], histtype="step", label=nao_labels[col])
+
+
+fig.colorbar(cm, loc="bottom", cols=(2, 3), tickloc="bottom", label="AR Frequency [%]", labelloc="top")
+
+axs[-1, :].format(yscale="log", title="", xlabel="")
+axs[-1, 0].legend(loc="b")
+axs.format(
+    coast=True,
+    reso="med",
+    lonlim=LON_SLICE,
+    latlim=LAT_SLICE,
+    leftlabels=nao_labels + [None],
+    toplabels=list(nao_freqs_ds.ARDT.values),
+)
+fig.format(
+    suptitle=f"AR Frequencies grouped by NAO bins",
+)
+```
+
+```{python}
+fig.savefig("../../figures/nao_bins_artmip.svg")
+```
+
