@@ -23,7 +23,10 @@ logger = logging.getLogger(__name__)
 
 def generate_shp() -> BaseGeometry:
     # Pytest root dir is project root dir.
-    gdf = gpd.read_file(Path(__file__).parent / "../etc/ne_50_admin_0_countries/ne_50m_admin_0_countries.shp")
+    gdf = gpd.read_file(
+        Path(__file__).parent
+        / "../etc/ne_50_admin_0_countries/ne_50m_admin_0_countries.shp"
+    )
     scand_gdf = gdf[
         (gdf["ADMIN"] == "Sweden")
         + (gdf["ADMIN"] == "Norway")
@@ -38,7 +41,9 @@ def generate_shp() -> BaseGeometry:
 
 
 def main() -> None:
-    logging.basicConfig(filename="preprocess.log", level=logging.INFO)
+    logging.basicConfig(
+        filename=Path(__file__).parent / "logs/preprocess.log", level=logging.INFO
+    )
     client = Client()
     """Run the preprocessing pipeline for a bunch of artmip datates."""
     for artmip_path in tqdm(ARTMIP_PATHS):
@@ -48,7 +53,7 @@ def main() -> None:
             "region_name": "scand_ars",
         }
         # TODO: Can probably increase n_batch_chunks. Now memeory seems to peak around 9GB.
-        ar_ds = ArtmipDataset(path_dict=path_dict, time_thin=6, overwrite=False)
+        ar_ds = ArtmipDataset(path_dict=path_dict, time_thin=6, overwrite=True)
         logger.info(ar_ds.ardt_raw_name)
 
         region_shp: BaseGeometry = generate_shp()

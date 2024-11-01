@@ -280,7 +280,12 @@ class ArtmipDataset:
             iter_blocks = self._generate_iter_blocks(self.ar_tag_ds.chunksizes)
             for i, (time_slice, lat_slice, lon_slice) in tqdm(
                 enumerate(
-                    zip(iter_blocks["time"], iter_blocks["lat"], iter_blocks["lon"], strict=False)
+                    zip(
+                        iter_blocks["time"],
+                        iter_blocks["lat"],
+                        iter_blocks["lon"],
+                        strict=False,
+                    )
                 ),
                 disable=not show_progress,
             ):
@@ -318,8 +323,8 @@ class ArtmipDataset:
                 logger.info(f"Compute and save block {i}...")
                 # NOTE: if i = 0, it means that we are on the first year of the dataset
                 if not i:
-                    mode = "w" if self.overwrite else None
-                    ds_feat.to_zarr(store_path, mode)
+                    mode: Literal["w"] | None = "w" if self.overwrite else None
+                    ds_feat.to_zarr(store_path, mode=mode)
 
                 else:
                     ds_feat.to_zarr(store_path, append_dim="time")
@@ -411,8 +416,8 @@ class ArtmipDataset:
 
 def fill_coordinates(ds: xr.Dataset) -> xr.Dataset:
     """Fill missing coordinates. Assume that data is ERA5."""
-    new_lats = np.arange(-90, 90.25, 0.25)
-    new_lons = np.arange(-180, 180, 0.25)
+    new_lats = np.arange(90, -90.25, -0.25)
+    new_lons = np.arange(0, 360, 0.25)
     ds = ds.assign_coords(lat=new_lats, lon=new_lons)
     ds.lat.attrs = {
         "long_name": "latitude",
