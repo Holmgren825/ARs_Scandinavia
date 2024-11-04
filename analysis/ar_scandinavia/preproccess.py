@@ -95,7 +95,7 @@ class ArtmipDataset:
         name = re.sub(".ar", "", name)
         return name
 
-    def _get_timerange_str(self: Self, ds: xr.Dataset) -> str:
+    def _get_timerange_str(self: Self, ds: xr.Dataset | xr.DataArray) -> str:
         first_timestep = ds.isel(time=0).time.dt.strftime("%Y%m%d").values
         last_timestep = ds.isel(time=-1).time.dt.strftime("%Y%m%d").values
 
