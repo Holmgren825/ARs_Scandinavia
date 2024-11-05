@@ -7,7 +7,7 @@ from pathlib import Path
 
 import cf_xarray as cfxr
 import xarray as xr
-from ar_identify.feature import remap_ar_features, track_ar_features
+from ar_identify.feature import track_ar_features_seq
 from ar_scandinavia.preproccess import ArtmipDataset, PathDict
 from dask.distributed import Client
 from process_artmip import generate_shp
@@ -26,7 +26,7 @@ LON_SLICE = (-10, 45)
 
 START_YEAR = "1980"
 END_YEAR = "2019"
-OVERWRITE = False
+OVERWRITE = True
 
 logger = logging.getLogger(__name__)
 
@@ -72,23 +72,17 @@ def main() -> None:
         store_path = os.path.join(ar_ds.ardt_proj_dir, fname) + ".zarr"
 
         if not os.path.exists(store_path) or OVERWRITE:
+            # NOTE: Use a list to keep the time dimension.
+            t0_features = features.isel(time=[0])
+            t0_features = t0_features.rename("ar_tracked_id")
+            t0_features.to_zarr(store_path, mode="w")
+            tracked_features = xr.open_zarr(store_path)
             logger.info("START: Tracking AR features")
-            mappings = track_ar_features(features, use_tqdm=True)
+            track_ar_features_seq(
+                features, tracked_features.ar_tracked_id, store_path, use_tqdm=True
+            )
             logger.info("END: Tracking AR features")
 
-            logger.info("START: Applying AR feature mappings")
-            tracked_features = remap_ar_features(
-                features.where(features > 0, 0).data.astype(int), mappings
-            )
-            logger.info("END: Applying AR feature mappings")
-
-            tracked_features_ds = xr.DataArray(
-                tracked_features, coords=features.coords, name="ar_tracked_id"
-            )
-
-            logger.info("START: Saving tracked AR features")
-            tracked_features_ds.to_zarr(store_path, mode="w")
-            logger.info("END: Saving tracked AR features")
         else:
             logger.info(f"{store_path} already exists, not overwriting")
 
