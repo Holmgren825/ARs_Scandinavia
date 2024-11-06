@@ -14,9 +14,9 @@ from tqdm import tqdm
 
 ARTMIP_PATHS = [
     "/data/projects/atmo_rivers_scandinavia/ERA5.Mundhenk_v3/",
-    "/data/projects/atmo_rivers_scandinavia/ERA5.ar.Reid500/",
-    "/data/projects/atmo_rivers_scandinavia/ERA5.ar.GuanWaliser_v2/",
-    "/data/projects/atmo_rivers_scandinavia/ERA5.ar.TempestLR/",
+    "/data/projects/atmo_rivers_scandinavia/ERA5.Reid500/",
+    "/data/projects/atmo_rivers_scandinavia/ERA5.GuanWaliser_v2/",
+    "/data/projects/atmo_rivers_scandinavia/ERA5.TempestLR/",
 ]
 STORE_PATTERN = "*.scand_ars.tracked.*.zarr"
 
@@ -102,7 +102,7 @@ def main() -> None:
                 # Assign the new sample id.
                 collapsed_sample = collapsed_sample.expand_dims(sample_id=[sample_id])
 
-                logger.info(f"Saving collapsed sample: {sample_id}")
+                logger.debug(f"Saving collapsed sample: {sample_id}")
                 if not i:
                     collapsed_sample.to_zarr(store_path_collapsed, mode="w")
                 else:
@@ -123,7 +123,9 @@ def main() -> None:
         else:
             logger.info(f"{store_path_collapsed} already exists.")
 
-    stats_df.to_csv(STATS_CSV_PATH)
+        # Make sure to save the csv after every ardt.
+        stats_df.to_csv(STATS_CSV_PATH)
+
     client.shutdown()
     logger.info("Work finished.")
 
