@@ -13,15 +13,19 @@ def cluster_plot(
     ardt_name: str,
     tot_pr: xr.Dataset,
     cluster_counts: np.ndarray,
-    resample_id: str,
     n_clusters: int,
     lat_slice: tuple[int, int],
     lon_slice: tuple[int, int],
+    resample_id: str | None = None,
 ) -> pplt.Figure:
     """Create a plot of AR/PR clusters."""
     tot_pr_vmax = tot_pr.tp.max().values
-    n_timesteps = ar_ds.resample(time=resample_id).sum().time.shape[0]
-    cluster_id = 1
+
+    if resample_id is not None:
+        n_timesteps = ar_ds.resample(time=resample_id).sum().time.shape[0]
+    else:
+        # FIXME: Should not be hard coded.
+        n_timesteps = 58440
     fig, axs = pplt.subplots(
         nrows=n_clusters,
         ncols=2,

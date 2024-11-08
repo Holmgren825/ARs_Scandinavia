@@ -16,8 +16,8 @@ def subsel_ds(
     ds: xr.DataArray,
     lat_slice: tuple[int, int],
     lon_slice: tuple[int, int],
-    start_year: str,
-    end_year: str,
+    start_year: str | None = None,
+    end_year: str | None = None,
 ) -> xr.DataArray: ...
 
 
@@ -26,8 +26,8 @@ def subsel_ds(
     ds: xr.Dataset,
     lat_slice: tuple[int, int],
     lon_slice: tuple[int, int],
-    start_year: str,
-    end_year: str,
+    start_year: str | None = None,
+    end_year: str | None = None,
 ) -> xr.Dataset: ...
 
 
@@ -35,8 +35,8 @@ def subsel_ds(
     ds: xr.DataArray | xr.Dataset,
     lat_slice: tuple[int, int],
     lon_slice: tuple[int, int],
-    start_year: str,
-    end_year: str,
+    start_year: str | None = None,
+    end_year: str | None = None,
 ) -> xr.DataArray | xr.Dataset:
     """Generate a subselection of given dataset."""
     if ds.cf["longitude"].values[-1] > 359:
@@ -52,10 +52,11 @@ def subsel_ds(
     sel_ds = ds.cf.sel(
         latitude=slice(*lat_slice),
         longitude=slice(*lon_slice),
-        time=slice(start_year, end_year),
-    ).chunk("auto")
+    )
+    if start_year is not None and end_year is not None:
+        sel_ds = sel_ds.cf.sel(time=slice(start_year, end_year))
 
-    return sel_ds
+    return sel_ds.chunk("auto")
 
 
 def compute_ar_pr_values(
@@ -98,3 +99,55 @@ def compute_ar_pr_values(
     pr_vals = [pr_val.result() for pr_val in pr_vals]
 
     return ar_vals, pr_vals, cluster_counts
+
+
+def compute_ar_pr_values_collapsed(
+    ar_ds: xr.Dataset,
+    precip_ds: xr.Dataset,
+    cluster_labels: xr.DataArray,
+    n_clusters: int,
+    client: Client,
+) -> tuple[list[xr.DataArray], list[xr.DataArray], np.ndarray]:
+    """Compute AR and PR values for each cluster id. Useful for plotting."""
+    cluster_counts = []
+
+    ar_vals = []
+    pr_vals = []
+    for cluster_id in range(n_clusters):
+        curr_cluster_mask = (cluster_labels == cluster_id).compute()
+        times = np.asarray(
+            list(
+                map(
+                    lambda x: x[-23:].split("-"),
+                    cluster_labels[curr_cluster_mask].sample_id.values,
+                )
+            )
+        )
+        cluster_precip = []
+        ar_lengths = []
+        for time in times:
+            precip_ar_sum = precip_ds.tp.sel(
+                time=slice(time[0], time[1]),
+            )
+            cluster_precip.append(precip_ar_sum)
+            ar_lengths.append(precip_ar_sum.shape[0])
+
+        ar_vals.append(
+            (
+                (ar_ds.isel(sample_id=curr_cluster_mask).ar_tracked_id > 0)
+                * np.asarray(ar_lengths).reshape(-1, 1, 1)
+            ).sum("sample_id")
+        )
+
+        cluster_precip_da = xr.concat(cluster_precip, dim="time")
+        # Get the number of timesteps in each cluster.
+        cluster_counts.append(cluster_precip_da.shape[0])
+        pr_vals.append(cluster_precip_da.sum("time"))
+
+    ar_vals = client.compute(ar_vals)
+    pr_vals = client.compute(pr_vals)
+
+    ar_vals = [ar_val.result() for ar_val in ar_vals]
+    pr_vals = [pr_val.result() for pr_val in pr_vals]
+
+    return ar_vals, pr_vals, np.asarray(cluster_counts)
