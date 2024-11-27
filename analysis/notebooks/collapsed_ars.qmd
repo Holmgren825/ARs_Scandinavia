@@ -50,6 +50,10 @@ from xr_utils.coordinates import conv_lon_to_180
 ```
 
 ```{python}
+pplt.rc["font.size"] = 7
+```
+
+```{python}
 LAT_SLICE = (50, 74)
 LON_SLICE = (-10, 45)
 ```
@@ -69,6 +73,10 @@ precip_ds = precip_ds.cf.sel(time=slice("1980", "2019"))
 
 ```{python}
 precip_ds = subsel_ds(precip_ds, LAT_SLICE, LON_SLICE)
+```
+
+```{python}
+ann_avg_precip_ds = precip_ds.tp.groupby("valid_time.year").sum().mean("year").load()
 ```
 
 # Check relevant number of clusters.
@@ -206,18 +214,16 @@ At this points, we don't really need to care about the ensemble members, we can 
 - But we can remove the time coordinate for now, but it would be nice to keep the groupby functionality.
 
 ```{python}
-ar_precip_ens = precip_ds.cf.sel(time=ar_pr_ts_ens.valid_time)
+ar_precip_ens = precip_ds.cf.sel(time=ar_ts_ens.valid_time)
 n_ar_precip_ens = precip_ds.where(
-    ~precip_ds.cf["time"].isin(ar_pr_ts_ens.valid_time), drop=True
+    ~precip_ds.cf["time"].isin(ar_ts_ens.valid_time), drop=True
 )
 ```
 
 ### Annual average
 
 ```{python}
-n_ar_ann_avg = (
-    n_ar_precip_ens.cf.groupby("time.year").sum().mean("year").tp.compute() / 4
-)
+n_ar_ann_avg = n_ar_precip_ens.cf.groupby("time.year").sum().mean("year").tp.compute()
 ar_ann_avg = ar_precip_ens.cf.groupby("time.year").sum().mean("year").tp.compute() / 4
 ```
 
@@ -236,7 +242,7 @@ cm = ar_ann_avg.plot(
 # cm = ar_ann_avg.plot(ax=axs[1], vmin=0, vmax=vmax, cmap="oslor_r", add_colorbar=False)
 axs[0].colorbar(cm, label="Total annual average\nprecipitation [m]")
 
-(ar_ann_avg / (ar_ann_avg + n_ar_ann_avg) * 100).plot(
+(ar_ann_avg / ann_avg_precip_ds * 100).plot(
     ax=axs[1],
     cbar_kwargs={"label": "Total precipitation\nfraction [%]"},
     rasterized=True,
@@ -278,7 +284,7 @@ hist_n_ar = hist_n_ar.compute()
 ```
 
 ```{python}
-non_ar_precip_sum_ds = non_ar_precip_ds.cf.sum("time").compute()
+# non_ar_precip_sum_ds = non_ar_precip_ds.cf.sum("time").compute()
 ```
 
 ```{python}
@@ -286,8 +292,8 @@ non_ar_precip_sum_ds = non_ar_precip_ds.cf.sum("time").compute()
 ar_med = ar_precip_ens.cf.mean("valid_time").compute() * 1000
 n_ar_med = n_ar_precip_ens.cf.mean("valid_time").compute() * 1000
 # std
-ar_std = ar_precip_ens.cf.std("valid_time").compute() * 1000
-n_ar_std = n_ar_precip_ens.cf.std("valid_time").compute() * 1000
+# ar_std = ar_precip_ens.cf.std("valid_time").compute() * 1000
+# n_ar_std = n_ar_precip_ens.cf.std("valid_time").compute() * 1000
 ```
 
 ```{python}
@@ -341,31 +347,106 @@ fig.savefig("../../figures/avg_precip_timestep_ar_ens.svg")
 
 ### Cluster ensemble
 
+Could we have a start and end time coordinate for the samples? In order to be able to index by time?
+
 ```{python}
-ar_ts_ens
+ar_precip_ens = ar_precip_ens.assign_coords({"label": ar_ts_ens})
 ```
 
 ```{python}
-test = ar_precip_ens.assign_coords({"label": ar_ts_ens})
+# NOTE: Need to divide by 4 since we have 4 ARDTs?
+ar_precip_ens_avg = (
+    ar_precip_ens.groupby(["label", "valid_time.year"]).sum().mean("year").load() / 4
+)
+ar_precip_ens_avg_ts = ar_precip_ens.groupby(["label"]).mean().load()
 ```
 
 ```{python}
-test2 = test.groupby(["label", "valid_time.year"]).sum().mean("year").load()
+def remap_labels(labels: da.array, label_dict: dict) -> da.array:
+    return labels.map_blocks(
+        lambda x: np.vectorize(label_dict.get)(x),
+        dtype=int,
+    )
 ```
+
+```{python}
+ar_ens_ds = []
+for ardt_name in tqdm(ARDT_NAMES):
+    ar_path = os.path.join(
+        BASE_PATH,
+        f"ERA5.{ardt_name}",
+        f"ERA5.{ardt_name}.scand_ars.collapsed.1980-2019.zarr",
+    )
+    label_path = os.path.join(
+        BASE_PATH,
+        f"ERA5.{ardt_name}",
+        f"ERA5.{ardt_name}.collapsed.cluster_labels.zarr",
+    )
+    ar_ds = xr.open_zarr(ar_path)
+    label_ds = xr.open_zarr(label_path)
+    ar_ds = subsel_ds(ar_ds, LAT_SLICE, LON_SLICE)
+
+    curr_times = np.asarray(
+        list(
+            map(
+                lambda x: x[-23:].split("-"),
+                ar_ds.sample_id.values,
+            )
+        )
+    )
+    start_times = pd.to_datetime(curr_times[:, 0], format="%Y%m%dT%H")
+    labels = remap_labels(label_ds.labels.data, label_dict[ardt_name])
+
+    ar_ds = ar_ds.assign_coords({"start_time": ("sample_id", start_times)})
+    ar_ds = ar_ds.assign_coords({"label": ("sample_id", labels)})
+
+    ar_ens_ds.append(ar_ds)
+
+ar_ens_ds = xr.concat(ar_ens_ds, dim="ardt")
+```
+
+```{python}
+grouped_ars = ar_ens_ds.groupby(["start_time.year", "label"]).sum().mean("year")
+```
+
+```{python}
+grouped_ars = grouped_ars.load()
+```
+
+#### Total precip fraction
 
 ```{python}
 fig, axs = pplt.subplots(
-    figwidth="8.3cm",
+    figwidth="12cm",
     nrows=4,
-    proj=4 * ["nsper"],
+    ncols=2,
+    proj=4 * 2 * ["nsper"],
     proj_kw={"lon_0": 14, "lat_0": 65},
     sharey=False,
     sharex=False,
     abc=True,
 )
-vmax = test2.tp.max().values
+vmax = ar_precip_ens_avg.tp.max().values
 for i in range(4):
-    test2.isel(label=i).tp.plot(ax=axs[i], vmin=0, cmap="oslo_r", rasterized=True)
+    cm = (grouped_ars.isel(label=i).ar_tracked_id / 1464 * 100).plot(
+        ax=axs[i, 0],
+        vmin=0,
+        rasterized=True,
+        add_colorbar=False,
+    )
+    axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15)
+    curr_tp = ar_precip_ens_avg.isel(label=i).tp
+    cm = (curr_tp / ann_avg_precip_ds * 100).plot(
+        ax=axs[i, 1],
+        vmin=0,
+        # vmax=16,
+        cmap="oslo_r",
+        rasterized=True,
+        add_colorbar=False,
+        # cbar_kwargs={"label": "Total precipitation\nfraction [%]"},
+    )
+    axs[i, 1].colorbar(cm, label="Total precipitation\nfraction [%]", width=0.15)
+
 
 axs.format(
     coast=True,
@@ -376,10 +457,59 @@ axs.format(
     abcloc="ul",
     abcbbox=True,
     rowlabels=[f"Cluster {i}" for i in range(1, 5)],
-    suptitle="Annual average precipitation\nper cluster [Ens. average]"
+    collabels=["AR Frequency", "Total precipitation fraction"],
+    suptitle="Ensemble average AR clusters",
 )
 ```
 
 ```{python}
-fig.savefig("../../figures/ens_avg_ar_pr_clusters.svg")
+fig.savefig("../../figures/ann_avg_precip_ar_ens_per_cluster.svg")
 ```
+
+#### Average timestep
+
+```{python}
+fig, axs = pplt.subplots(
+    figwidth="12cm",
+    nrows=4,
+    ncols=2,
+    proj=4 * 2 * ["nsper"],
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    sharey=False,
+    sharex=False,
+    abc=True,
+)
+vmax = ar_precip_ens_avg.tp.max().values
+for i in range(4):
+    cm = (grouped_ars.isel(label=i).ar_tracked_id / 1464 * 100).plot(
+        ax=axs[i, 0],
+        vmin=0,
+        rasterized=True,
+        add_colorbar=False,
+        #cbar_kwargs={"label": "Frequency [%]"},
+    )
+    axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15)
+
+    
+    cm = (ar_precip_ens_avg_ts.isel(label=i).tp * 1000).plot(ax=axs[i, 1], vmin=0, cmap="oslo_r", rasterized=True, add_colorbar=False)
+    axs[i, 1].colorbar(cm, label="Total precipitation\n [mm]", width=0.15)
+
+
+axs.format(
+    coast=True,
+    reso="med",
+    lonlim=LON_SLICE,
+    latlim=LAT_SLICE,
+    title="",
+    abcloc="ul",
+    abcbbox=True,
+    rowlabels=[f"Cluster {i}" for i in range(1, 5)],
+    collabels=["AR Frequency", "Timestep avg. total precipitation"],
+    suptitle="Ensemble average AR clusters",
+)
+```
+
+```{python}
+fig.savefig("../../figures/avg_precip_ar_timestep_ens_per_cluster.svg")
+```
+
