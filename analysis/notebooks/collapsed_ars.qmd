@@ -486,12 +486,13 @@ for i in range(4):
         vmin=0,
         rasterized=True,
         add_colorbar=False,
-        #cbar_kwargs={"label": "Frequency [%]"},
+        # cbar_kwargs={"label": "Frequency [%]"},
     )
     axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15)
 
-    
-    cm = (ar_precip_ens_avg_ts.isel(label=i).tp * 1000).plot(ax=axs[i, 1], vmin=0, cmap="oslo_r", rasterized=True, add_colorbar=False)
+    cm = (ar_precip_ens_avg_ts.isel(label=i).tp * 1000).plot(
+        ax=axs[i, 1], vmin=0, cmap="oslo_r", rasterized=True, add_colorbar=False
+    )
     axs[i, 1].colorbar(cm, label="Total precipitation\n [mm]", width=0.15)
 
 
@@ -513,3 +514,220 @@ axs.format(
 fig.savefig("../../figures/avg_precip_ar_timestep_ens_per_cluster.svg")
 ```
 
+#### Clusters grouped by season
+
+```{python}
+ar_ens_ds = ar_ens_ds.load()
+```
+
+```{python}
+season_grouped_ars = (
+    ar_ens_ds.groupby(["start_time.season", "start_time.year", "label"])
+    .sum()
+    .mean("year")
+)
+season_grouped_ars
+```
+
+```{python}
+season_grouped_ars = season_grouped_ars.isel(season = slice(0, -1))
+```
+
+Get the number of samples for each season, on average.
+
+```{python}
+season_samples = {}
+for key, val in precip_ds.sel(valid_time="1981").groupby("valid_time.season").groups.items():
+    season_samples[key] = len(val)
+```
+
+```{python}
+season_samples
+```
+
+Pre-compute the frequencies.
+
+```{python}
+freqs = season_grouped_ars / np.asarray(list(season_samples.values())).reshape((1, 1, -1, 1)) / 4 * 100
+```
+
+```{python}
+season_order = ["DJF", "MAM", "JJA", "SON"]
+nrows = 4
+ncols = 4
+fig, axs = pplt.subplots(
+    figwidth="12cm",
+    nrows=nrows,
+    ncols=ncols,
+    proj=nrows * ncols * ["nsper"],
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    sharey=False,
+    sharex=False,
+    abc=True,
+)
+for i in range(nrows):
+    vmax = freqs.isel(label=i).ar_tracked_id.max().values
+    for j, season in enumerate(season_order):
+        cm = freqs.isel(label=i).sel(season=season).ar_tracked_id.plot(
+            ax=axs[i, j],
+            rasterized=True,
+            vmin=0,
+            vmax=vmax,
+            add_colorbar=False
+        )
+    axs[i, -1].colorbar(cm, label="Frequency [%]", width=0.1)
+
+axs.format(
+    coast=True,
+    reso="med",
+    lonlim=LON_SLICE,
+    latlim=LAT_SLICE,
+    title="",
+    abcloc="ul",
+    abcbbox=True,
+    rowlabels=[f"Cluster {i}" for i in range(1, 5)],
+    collabels=season_order,
+    suptitle="Ensemble average seasonal AR frequencies",
+)
+```
+
+```{python}
+fig.savefig("../../figures/ens_avg_seasonal_ar_clusters.svg")
+```
+
+#### Cluster grouped by NAO
+
+```{python}
+def prepare_nao_ds(path: str | None = None) -> pd.Series:
+    """Prepare NAO dataframe."""
+    if path is None:
+        path = Path(__file__).parent / "../etc/norm_daily_nao_index_1950_2024.txt"
+
+    nao_df: pd.DataFrame = pd.read_csv(
+        filepath_or_buffer=path,
+        sep=r"\s+",
+        header=None,
+        names=["year", "month", "day", "nao"],
+        dtype={"year": str, "month": str, "day": str, "nao": float},
+        na_values="-99.0",
+    )
+    nao_df["time"] = pd.to_datetime(
+        nao_df["year"] + "-" + nao_df["month"] + "-" + nao_df["day"]
+    )
+    nao_df.index = pd.Index(nao_df.time)
+    nao_series = nao_df["nao"]
+    nao_series = nao_series.interpolate()
+
+    # Upsample to 6 hourly for convenience with era5 data.
+    nao_series = nao_series.resample("6h").ffill()
+
+    # first_timestep = ar_ds.time[:1].to_numpy()[0]
+    # last_timestep = ar_ds.time[-1:].to_numpy()[0]
+
+    # # What year do we need?
+    # nao_series = nao_series.loc[first_timestep:last_timestep]
+
+    return nao_series
+
+
+def get_nao_bins(nao_series: pd.Series, midpoint_qtile: float = 0.4524) -> np.ndarray:
+    """Generate NAO bins with roughly equal number of samples on either side of 0."""
+    # TODO: Don't hard code midpoint.
+    bins = np.quantile(
+        nao_series,
+        [
+            0,
+            midpoint_qtile / 2,
+            midpoint_qtile,
+            midpoint_qtile + (1 - midpoint_qtile) / 2,
+            1,
+        ],
+    )
+    return bins
+```
+
+```{python}
+nao_series = prepare_nao_ds(path="../etc/norm_daily_nao_index_1950_2024.txt")
+nao_series = nao_series.loc["1980":"2019"]
+nao_da = xr.DataArray(nao_series)
+nao_bins = get_nao_bins(nao_series)
+
+hist, bins = np.histogram(nao_series, nao_bins)
+```
+
+Select the nao values for dates when we have ARs
+
+```{python}
+ar_nao_values = nao_da.sel(time=ar_ens_ds.start_time, method="nearest")
+ar_nao_values = ar_nao_values.where(~ar_nao_values.label.isnull())
+```
+
+and assign them as coordinate to the ar ensemble
+
+```{python}
+ar_ens_ds = ar_ens_ds.assign_coords({"nao": ar_nao_values})
+```
+
+Groupby both nao and the cluster label.
+
+```{python}
+from xarray.groupers import BinGrouper, UniqueGrouper, TimeResampler
+```
+
+```{python}
+ar_nao_groups = ar_ens_ds.groupby(nao=BinGrouper(nao_bins), label=UniqueGrouper()).sum()
+```
+
+```{python}
+# Reshape for broadcasting
+nao_counts = hist.reshape((1, 1, -1, 1))
+```
+
+Calculate the frequencies
+
+```{python}
+freqs = ar_nao_groups / nao_counts / 4 * 100
+```
+
+```{python}
+nrows = 4
+ncols = 4
+fig, axs = pplt.subplots(
+    figwidth="12cm",
+    nrows=nrows,
+    ncols=ncols,
+    proj=nrows * ncols * ["nsper"],
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    sharey=False,
+    sharex=False,
+    abc=True,
+)
+for i in range(nrows):
+    vmax = freqs.isel(label=i).ar_tracked_id.max().values
+    for j in range(4):
+        cm = freqs.isel(label=i, nao_bins=j).ar_tracked_id.plot(
+            ax=axs[i, j],
+            rasterized=True,
+            vmin=0,
+            vmax=vmax,
+            add_colorbar=False
+        )
+    axs[i, -1].colorbar(cm, label="Frequency [%]", width=0.1)
+
+axs.format(
+    coast=True,
+    reso="med",
+    lonlim=LON_SLICE,
+    latlim=LAT_SLICE,
+    title="",
+    abcloc="ul",
+    abcbbox=True,
+    rowlabels=[f"Cluster {i}" for i in range(1, 5)],
+    collabels=[f"{bin}" for bin in freqs.nao_bins.values],
+    suptitle="Ensemble average NAO-grouped AR frequencies",
+)
+```
+
+```{python}
+fig.savefig("../../figures/ens_avg_nao_ar_clusters.svg")
+```
