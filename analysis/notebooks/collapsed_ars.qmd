@@ -76,6 +76,12 @@ precip_ds = subsel_ds(precip_ds, LAT_SLICE, LON_SLICE)
 ```
 
 ```{python}
+xr.open_zarr(
+    "/data/atmospheric_rivers/artmip/ERA5.ar.GuanWaliser_v2.1hr/ERA5.ar_ids.GuanWaliser_v2.6hr.19790101-20191231_scandinavia.zarr/"
+)
+```
+
+```{python}
 ann_avg_precip_ds = precip_ds.tp.groupby("valid_time.year").sum().mean("year").load()
 ```
 
@@ -269,18 +275,76 @@ fig.savefig("../../figures/ann_avg_precip_ar_ens.svg")
 
 Get histograms
 
+Select only unique time steps, no doubles.
+
+```{python}
+ar_precip_ens_unique = precip_ds.sel(valid_time=np.unique(ar_precip_ens.valid_time))
+```
+
+```{python}
+# Convert to mm/h
+ar_precip_ens = ar_precip_ens * 1e3 / 6
+ar_precip_ens_unique = ar_precip_ens_unique * 1e3 / 6
+n_ar_precip_ens = n_ar_precip_ens * 1e3 / 6
+```
+
+```{python}
+weights = np.cos(np.deg2rad(ar_precip_ens_unique.latitude))
+
+# Mean
+ar_precip_hist = ar_precip_ens_unique.weighted(weights).mean(["latitude", "longitude"])
+n_ar_precip_hist = n_ar_precip_ens.weighted(weights).mean(["latitude", "longitude"])
+
+# Max (0.75 quantile)
+ar_precip_hist_max = ar_precip_ens_unique.quantile(0.75, ["latitude", "longitude"])
+n_ar_precip_hist_max = n_ar_precip_ens.quantile(0.75, ["latitude", "longitude"])
+```
+
+```{python}
+bin_max = np.round(
+    max(
+        ar_precip_hist.tp.max().compute(),
+        n_ar_precip_hist.tp.max().compute(),
+        ar_precip_hist_max.tp.max().compute(),
+        n_ar_precip_hist_max.tp.max().compute(),
+    ),
+    decimals=2,
+)
+```
+
+```{python}
+hist_bin_range = (0, bin_max.values)
+n_bins = 15
+```
+
 ```{python}
 hist_ar, bins = da.histogram(
-    ar_precip_ens.tp.data * 1e3, range=(0, 0.008 * 1e3), bins=10, density=True
+    ar_precip_hist.tp.data, range=hist_bin_range, bins=n_bins, density=True
 )
 hist_ar = hist_ar.compute()
 ```
 
 ```{python}
 hist_n_ar, bins = da.histogram(
-    n_ar_precip_ens.tp.data * 1e3, range=(0, 0.008 * 1e3), bins=10, density=True
+    n_ar_precip_hist.tp.data, range=hist_bin_range, bins=n_bins, density=True
 )
 hist_n_ar = hist_n_ar.compute()
+```
+
+Histograms for the 0.75 qtile.
+
+```{python}
+qtile_hist_ar, bins = da.histogram(
+    ar_precip_hist_max.tp.data, range=hist_bin_range, bins=n_bins, density=True
+)
+qtile_hist_ar = qtile_hist_ar.compute()
+```
+
+```{python}
+qtile_hist_n_ar, bins = da.histogram(
+    n_ar_precip_hist_max.tp.data, range=hist_bin_range, bins=n_bins, density=True
+)
+qtile_hist_n_ar = qtile_hist_n_ar.compute()
 ```
 
 ```{python}
@@ -289,8 +353,8 @@ hist_n_ar = hist_n_ar.compute()
 
 ```{python}
 # mean
-ar_med = ar_precip_ens.cf.mean("valid_time").compute() * 1000
-n_ar_med = n_ar_precip_ens.cf.mean("valid_time").compute() * 1000
+ar_med = ar_precip_ens.cf.mean("valid_time").compute()
+n_ar_med = n_ar_precip_ens.cf.mean("valid_time").compute()
 # std
 # ar_std = ar_precip_ens.cf.std("valid_time").compute() * 1000
 # n_ar_std = n_ar_precip_ens.cf.std("valid_time").compute() * 1000
@@ -299,6 +363,7 @@ n_ar_med = n_ar_precip_ens.cf.mean("valid_time").compute() * 1000
 ```{python}
 fig, axs = pplt.subplots(
     figwidth="8.3cm",
+    #figheight="12cm",
     nrows=3,
     proj=2 * ["nsper"] + [None],
     proj_kw={"lon_0": 14, "lat_0": 65},
@@ -307,35 +372,49 @@ fig, axs = pplt.subplots(
     abc=True,
 )
 
-vmax = max(ar_med.tp.max().values, n_ar_med.tp.max().values)
+qtile = 0.95
+vmax = max(ar_med.tp.quantile(qtile).values, n_ar_med.tp.quantile(qtile).values)
+
+cmap = pplt.Colormap("oslo_r", right=0.8)
+
 pr_cm = (n_ar_med.tp).plot(
-    ax=axs[0], cmap="oslo_r", vmin=0, vmax=vmax, add_colorbar=False, rasterized=True
+    ax=axs[0], cmap=cmap, vmin=0, vmax=vmax, add_colorbar=False, rasterized=True
 )
 
 pr_cm = (ar_med.tp).plot(
-    ax=axs[1], cmap="oslo_r", vmin=0, vmax=vmax, add_colorbar=False, rasterized=True
+    ax=axs[1], cmap=cmap, vmin=0, vmax=vmax, add_colorbar=False, rasterized=True
 )
-pr_cbar = axs[1].colorbar(pr_cm, loc="right", label="Total precipitation [mm]")
+pr_cbar = axs[1].colorbar(
+    pr_cm, loc="bottom", label="Precipitation [mm/h]", extend="max"
+)
 
-axs[2].stairs(hist_ar, bins, label="AR")
-axs[2].stairs(hist_n_ar, bins, label="No AR")
+axs[2].stairs(hist_ar, bins, label="AR [Avg.]", color="C0")
+
+axs[2].stairs(hist_n_ar, bins, label="No AR [Avg.]", color="C1")
+
+axs[2].stairs(qtile_hist_ar, bins, label="— [3rd qtile]", color="C0", ls="--")
+axs[2].stairs(qtile_hist_n_ar, bins, label="— [3rd qtile]", color="C1", ls="--")
+
 axs[2].format(
-    yscale="log",
-    xlabel="Total precipitation [mm]",
-    ylabel="Relative fequency ",
-    ytickloc="r",
-    ylabelloc="r",
+    # yscale="log",
+    xlabel="Precipitation [mm/h]",
+    ylabel="Density",
+    ytickloc="l",
+    ylabelloc="l",
+    title="Histogram of 1 hour precipitation"
 )
-axs[2].legend(loc="ur")
-
+axs[2].legend(loc="ur", ncols=2)
+axs[:2].format(
+    title=""
+)
 axs.format(
     coast=True,
     reso="med",
     lonlim=LON_SLICE,
     latlim=LAT_SLICE,
-    title="",
+    #title="",
     rowlabels=["Non-AR", "AR", ""],
-    suptitle="Average timestep total\nprecipitation [Ensemble average]",
+    suptitle="Average timestep precipitation\n[Ensemble average]",
     abcloc="ul",
     abcbbox=True,
 )
@@ -530,14 +609,16 @@ season_grouped_ars
 ```
 
 ```{python}
-season_grouped_ars = season_grouped_ars.isel(season = slice(0, -1))
+season_grouped_ars = season_grouped_ars.isel(season=slice(0, -1))
 ```
 
 Get the number of samples for each season, on average.
 
 ```{python}
 season_samples = {}
-for key, val in precip_ds.sel(valid_time="1981").groupby("valid_time.season").groups.items():
+for key, val in (
+    precip_ds.sel(valid_time="1981").groupby("valid_time.season").groups.items()
+):
     season_samples[key] = len(val)
 ```
 
@@ -548,7 +629,12 @@ season_samples
 Pre-compute the frequencies.
 
 ```{python}
-freqs = season_grouped_ars / np.asarray(list(season_samples.values())).reshape((1, 1, -1, 1)) / 4 * 100
+freqs = (
+    season_grouped_ars
+    / np.asarray(list(season_samples.values())).reshape((1, 1, -1, 1))
+    / 4
+    * 100
+)
 ```
 
 ```{python}
@@ -568,12 +654,12 @@ fig, axs = pplt.subplots(
 for i in range(nrows):
     vmax = freqs.isel(label=i).ar_tracked_id.max().values
     for j, season in enumerate(season_order):
-        cm = freqs.isel(label=i).sel(season=season).ar_tracked_id.plot(
-            ax=axs[i, j],
-            rasterized=True,
-            vmin=0,
-            vmax=vmax,
-            add_colorbar=False
+        cm = (
+            freqs.isel(label=i)
+            .sel(season=season)
+            .ar_tracked_id.plot(
+                ax=axs[i, j], rasterized=True, vmin=0, vmax=vmax, add_colorbar=False
+            )
         )
     axs[i, -1].colorbar(cm, label="Frequency [%]", width=0.1)
 
@@ -671,7 +757,7 @@ ar_ens_ds = ar_ens_ds.assign_coords({"nao": ar_nao_values})
 Groupby both nao and the cluster label.
 
 ```{python}
-from xarray.groupers import BinGrouper, UniqueGrouper, TimeResampler
+from xarray.groupers import BinGrouper, TimeResampler, UniqueGrouper
 ```
 
 ```{python}
@@ -706,11 +792,7 @@ for i in range(nrows):
     vmax = freqs.isel(label=i).ar_tracked_id.max().values
     for j in range(4):
         cm = freqs.isel(label=i, nao_bins=j).ar_tracked_id.plot(
-            ax=axs[i, j],
-            rasterized=True,
-            vmin=0,
-            vmax=vmax,
-            add_colorbar=False
+            ax=axs[i, j], rasterized=True, vmin=0, vmax=vmax, add_colorbar=False
         )
     axs[i, -1].colorbar(cm, label="Frequency [%]", width=0.1)
 
