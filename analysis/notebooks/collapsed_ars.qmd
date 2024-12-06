@@ -325,6 +325,10 @@ hist_ar = hist_ar.compute()
 ```
 
 ```{python}
+hist_ar
+```
+
+```{python}
 hist_n_ar, bins = da.histogram(
     n_ar_precip_hist.tp.data, range=hist_bin_range, bins=n_bins, density=True
 )
@@ -422,6 +426,57 @@ axs.format(
 
 ```{python}
 fig.savefig("../../figures/avg_precip_timestep_ar_ens.svg")
+```
+
+### Time step avg/std.
+
+```{python}
+# mean
+ar_std = ar_precip_ens.cf.std("valid_time").compute()
+```
+
+```{python}
+fig, axs = pplt.subplots(
+    figwidth="8.3cm",
+    #figheight="12cm",
+    nrows=2,
+    proj=2 * ["nsper"],
+    proj_kw={"lon_0": 14, "lat_0": 65},
+    sharey=False,
+    sharex=False,
+    abc=True,
+)
+
+
+cmap = pplt.Colormap("oslo_r", right=0.8)
+
+vmax = max(ar_med.tp.values.max(), ar_std.tp.values.max())
+pr_cm = (ar_med.tp).plot(
+    ax=axs[0], cmap=cmap, vmin=0, vmax=vmax, add_colorbar=False, rasterized=True
+)
+
+pr_cm = (ar_std.tp).plot(
+    ax=axs[1], cmap=cmap, vmin=0, vmax=vmax, add_colorbar=False, rasterized=True
+)
+pr_cbar = axs[1].colorbar(
+    pr_cm, loc="bottom", label="Precipitation [mm/h]"
+)
+
+axs.format(
+    coast=True,
+    reso="med",
+    lonlim=LON_SLICE,
+    latlim=LAT_SLICE,
+    title="",
+    rowlabels=["Avg", "Std.",],
+    suptitle="Time step precipitation [Ensemble]",
+    abcloc="ul",
+    abcbbox=True,
+)
+```
+
+```{python}
+fig.savefig("../../figures/avg_std_precip_timestep_ar_ens.svg")
 ```
 
 ### Cluster ensemble
