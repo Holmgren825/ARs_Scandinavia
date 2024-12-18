@@ -151,3 +151,16 @@ def compute_ar_pr_values_collapsed(
     pr_vals = [pr_val.result() for pr_val in pr_vals]
 
     return ar_vals, pr_vals, np.asarray(cluster_counts)
+
+
+def compute_spatial_correltion(da_a: xr.DataArray, da_b: xr.DataArray) -> xr.DataArray:
+    """Compute the weighted spatial correlation between two patterns."""
+    # NOTE: Normalize the data.
+    da_a = (da_a - da_a.mean()) / da_a.std()
+    da_b = (da_b - da_b.mean()) / da_b.std()
+
+    # Create weights based on the latitude.
+    weights = np.cos(np.deg2rad(da_a.cf["latitude"]))
+
+    # NOTE: Make sure that we are using the same coordinate names.
+    return xr.corr(da_a, da_b.cf.rename_like(da_a), weights=weights)
