@@ -41,7 +41,11 @@ import scipy
 import xarray as xr
 from ar_identify.metrics import spatial_jaccard_score
 from ar_scandinavia.pca_utils import combine_artmip_pca_results
-from ar_scandinavia.utils import compute_ar_pr_values_collapsed, subsel_ds
+from ar_scandinavia.utils import (
+    compute_ar_pr_values_collapsed,
+    compute_spatial_correltion,
+    subsel_ds,
+)
 from cartopy import crs as ccrs
 from dask_ml.cluster import KMeans
 from distributed.client import Client
@@ -83,7 +87,9 @@ xr.open_zarr(
 
 ```{python}
 # NOTE: also convert to mm.
-ann_avg_precip_ds = precip_ds.tp.groupby("valid_time.year").sum().mean("year").load() * 1e3
+ann_avg_precip_ds = (
+    precip_ds.tp.groupby("valid_time.year").sum().mean("year").load() * 1e3
+)
 ```
 
 # Check relevant number of clusters.
@@ -222,9 +228,9 @@ At this points, we don't really need to care about the ensemble members, we can 
 - But we can remove the time coordinate for now, but it would be nice to keep the groupby functionality.
 
 ```{python}
-ar_precip_ens = precip_ds.cf.sel(time=ar_ts_ens.valid_time)
-n_ar_precip_ens = precip_ds.where(
-    ~precip_ds.cf["time"].isin(ar_ts_ens.valid_time), drop=True
+ar_precip_ens = precip_ds.cf.sel(time=ar_ts_ens.valid_time) * 1e3
+n_ar_precip_ens = (
+    precip_ds.where(~precip_ds.cf["time"].isin(ar_ts_ens.valid_time), drop=True) * 1e3
 )
 ```
 
@@ -239,8 +245,10 @@ ar_ann_avg = ar_precip_ens.cf.groupby("time.year").sum().mean("year").tp.compute
 fig, axs = pplt.subplots(
     figwidth="8.3cm",
     nrows=2,
-    proj=2 * ["nsper"],
-    proj_kw={"lon_0": 14, "lat_0": 65},
+    # proj=2 * ["nsper"],
+    # proj_kw={"lon_0": 14, "lat_0": 65},
+    proj=2 * ["lcc"],
+    proj_kw={"central_longitude": 15},
     abc=True,
 )
 # vmax = max(n_ar_ann_avg.max().values, ar_ann_avg.max().values)
@@ -248,16 +256,19 @@ cm = ar_ann_avg.plot(
     ax=axs[0], vmin=0, cmap="oslor_r", add_colorbar=False, rasterized=True
 )
 # cm = ar_ann_avg.plot(ax=axs[1], vmin=0, vmax=vmax, cmap="oslor_r", add_colorbar=False)
-axs[0].colorbar(cm, label="Total annual average\nprecipitation [m]")
+axs[0].colorbar(cm, label="Total annual average\nprecipitation [mm]")
 
 (ar_ann_avg / ann_avg_precip_ds * 100).plot(
     ax=axs[1],
+    vmin=0,
     cbar_kwargs={"label": "Total precipitation\nfraction [%]"},
     rasterized=True,
 )
 
 axs.format(
     coast=True,
+    lonlabels=True,
+    latlabels=True,
     reso="med",
     lonlim=LON_SLICE,
     latlim=LAT_SLICE,
@@ -266,6 +277,7 @@ axs.format(
     suptitle="Annual average precipitation\nduring ARs [Ensemble averge]",
     abcloc="ul",
     abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
 )
 ```
 
@@ -285,9 +297,9 @@ ar_precip_ens_unique = precip_ds.sel(valid_time=np.unique(ar_precip_ens.valid_ti
 
 ```{python}
 # Convert to mm/h
-ar_precip_mh = ar_precip_ens * 1e3 / 6
+ar_precip_mh = ar_precip_ens / 6
 ar_precip_mh_unique = ar_precip_ens_unique * 1e3 / 6
-n_ar_precip_mh = n_ar_precip_ens * 1e3 / 6
+n_ar_precip_mh = n_ar_precip_ens / 6
 ```
 
 ```{python}
@@ -365,10 +377,10 @@ n_ar_med = n_ar_precip_mh.cf.mean("valid_time").compute()
 ```{python}
 fig, axs = pplt.subplots(
     figwidth="8.3cm",
-    #figheight="12cm",
+    # figheight="12cm",
     nrows=3,
-    proj=2 * ["nsper"] + [None],
-    proj_kw={"lon_0": 14, "lat_0": 65},
+    proj=2 * ["lcc"] + [None],
+    proj_kw={"central_longitude": 15},
     sharey=False,
     sharex=False,
     abc=True,
@@ -387,7 +399,12 @@ pr_cm = (ar_med.tp).plot(
     ax=axs[1], cmap=cmap, vmin=0, vmax=vmax, add_colorbar=False, rasterized=True
 )
 pr_cbar = fig.colorbar(
-    pr_cm, loc="right",rows=(1, 2), length=0.7, label="Precipitation [mm/h]", extend="max"
+    pr_cm,
+    loc="right",
+    rows=(1, 2),
+    length=0.7,
+    label="Precipitation [mm/h]",
+    extend="max",
 )
 
 axs[2].stairs(hist_ar, bins, label="AR [Avg.]", color="C0")
@@ -403,22 +420,23 @@ axs[2].format(
     ylabel="Density",
     ytickloc="l",
     ylabelloc="l",
-    title="Histogram of 1 hour precipitation"
+    title="Histogram of 1 hour precipitation",
 )
 axs[2].legend(loc="ur", ncols=2)
-axs[:2].format(
-    title=""
-)
+axs[:2].format(title="")
 axs.format(
     coast=True,
     reso="med",
+    latlabels=True,
+    lonlabels=True,
     lonlim=LON_SLICE,
     latlim=LAT_SLICE,
-    #title="",
+    # title="",
     rowlabels=["Non-AR", "AR", ""],
     suptitle="Average timestep precipitation\n[Ensemble average]",
     abcloc="ul",
     abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
 )
 ```
 
@@ -436,10 +454,10 @@ ar_std = ar_precip_mh.groupby("ardt").mean().std("ardt").compute()
 ```{python}
 fig, axs = pplt.subplots(
     figwidth="8.3cm",
-    #figheight="12cm",
+    # figheight="12cm",
     nrows=2,
-    proj=2 * ["nsper"],
-    proj_kw={"lon_0": 14, "lat_0": 65},
+    proj=2 * ["lcc"],
+    proj_kw={"central_longitude": 15},
     sharey=False,
     sharex=False,
     abc=True,
@@ -448,31 +466,33 @@ fig, axs = pplt.subplots(
 
 cmap = pplt.Colormap("oslo_r", right=0.8)
 qtile = 0.95
-#vmax = max(ar_med.tp.quantile(qtile).values, ar_std.tp.quantile(qtile).values)
+# vmax = max(ar_med.tp.quantile(qtile).values, ar_std.tp.quantile(qtile).values)
 pr_cm = (ar_med.tp).plot(
     ax=axs[0], cmap=cmap, vmin=0, add_colorbar=False, rasterized=True
 )
-pr_cbar = axs[0].colorbar(
-    pr_cm, loc="right", label="Precipitation [mm/h]"
-)
+pr_cbar = axs[0].colorbar(pr_cm, loc="right", label="Precipitation [mm/h]")
 
 pr_cm = (ar_std.tp).plot(
     ax=axs[1], cmap=cmap, vmin=0, add_colorbar=False, rasterized=True
 )
-pr_cbar = axs[1].colorbar(
-    pr_cm, loc="right", label="Precipitation [mm/h]"
-)
+pr_cbar = axs[1].colorbar(pr_cm, loc="right", label="Precipitation [mm/h]")
 
 axs.format(
     coast=True,
     reso="med",
     lonlim=LON_SLICE,
     latlim=LAT_SLICE,
+    lonlabels=True,
+    latlabels=True,
     title="",
-    rowlabels=["Avg", "Std.",],
+    rowlabels=[
+        "Avg",
+        "Std.",
+    ],
     suptitle="Time step precipitation [Ensemble]",
     abcloc="ul",
     abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
 )
 ```
 
@@ -492,7 +512,7 @@ ar_precip_ens = ar_precip_ens.assign_coords({"label": ar_ts_ens})
 # NOTE: Need to divide by 4 since we have 4 ARDTs?
 ar_precip_ens_avg = (
     ar_precip_ens.groupby(["label", "valid_time.year"]).sum().mean("year").load() / 4
-) * 1e3
+)
 ar_precip_ens_avg_ts = ar_precip_ens.groupby(["label"]).mean().load()
 ```
 
@@ -551,14 +571,25 @@ grouped_ars = grouped_ars.load()
 #### Total precip fraction
 
 ```{python}
+correlations = []
+for label in range(4):
+    corr = compute_spatial_correltion(
+        grouped_ars.isel(label=label).ar_tracked_id,
+        ar_precip_ens_avg.isel(label=label).tp / ann_avg_precip_ds,
+    )
+    correlations.append(corr)
+correlations = xr.concat(correlations, dim="label")
+```
+
+```{python}
 fig, axs = pplt.subplots(
     figwidth="12cm",
     nrows=4,
     ncols=2,
-    proj=4 * 2 * ["nsper"],
-    proj_kw={"lon_0": 14, "lat_0": 65},
-    sharey=False,
-    sharex=False,
+    proj=4 * 2 * ["lcc"],
+    proj_kw={"central_longitude": 15},
+    sharey=True,
+    sharex=True,
     abc=True,
 )
 vmax = ar_precip_ens_avg.tp.max().values
@@ -581,7 +612,19 @@ for i in range(4):
         add_colorbar=False,
         # cbar_kwargs={"label": "Total precipitation\nfraction [%]"},
     )
+    axs[i, 1].annotate(
+        f"Corr: {correlations.isel(label=i).values:.2f}",
+        (0.95, 0.95),
+        xycoords="axes fraction",
+        ha="right",
+        va="top",
+        bbox={"boxstyle": "square", "facecolor": "white"},
+    )
     axs[i, 1].colorbar(cm, label="Total precipitation\nfraction [%]", width=0.15)
+    axs[i, 0].format(latlabels=True)
+    if i == 3:
+        axs[i, 0].format(latlabels=True, lonlabels=True)
+        axs[i, 1].format(lonlabels=True)
 
 
 axs.format(
@@ -592,6 +635,7 @@ axs.format(
     title="",
     abcloc="ul",
     abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
     rowlabels=[f"Cluster {i}" for i in range(1, 5)],
     collabels=["AR Frequency", "Total precipitation fraction"],
     suptitle="Ensemble average AR clusters",
@@ -605,7 +649,12 @@ fig.savefig("../../figures/ann_avg_precip_ar_ens_per_cluster.svg")
 #### Total precip fraction std
 
 ```{python}
-ar_precip_cluster_std = ar_precip_ens.groupby(["ardt", "label", "valid_time.year"]).sum().mean("year").std("ardt") * 1e3
+ar_precip_cluster_std = (
+    ar_precip_ens.groupby(["ardt", "label", "valid_time.year"])
+    .sum()
+    .mean("year")
+    .std("ardt")
+)
 ```
 
 ```{python}
@@ -613,7 +662,13 @@ ar_precip_cluster_std = ar_precip_cluster_std.load()
 ```
 
 ```{python}
-freq_cluster_std = ar_ens_ds.groupby(["ardt", "label", "start_time.year"]).sum().mean("year").std("ardt").load()
+freq_cluster_std = (
+    ar_ens_ds.groupby(["ardt", "label", "start_time.year"])
+    .sum()
+    .mean("year")
+    .std("ardt")
+    .load()
+)
 ```
 
 ```{python}
@@ -621,8 +676,8 @@ fig, axs = pplt.subplots(
     figwidth="12cm",
     nrows=4,
     ncols=2,
-    proj=4 * 2 * ["nsper"],
-    proj_kw={"lon_0": 14, "lat_0": 65},
+    proj=4 * 2 * ["lcc"],
+    proj_kw={"central_longitude": 15},
     sharey=False,
     sharex=False,
     abc=True,
@@ -648,6 +703,10 @@ for i in range(4):
         # cbar_kwargs={"label": "Total precipitation\nfraction [%]"},
     )
     axs[i, 1].colorbar(cm, label="Total precipitation\nfraction [%]", width=0.15)
+    axs[i, 0].format(latlabels=True)
+    if i == 3:
+        axs[i, 0].format(latlabels=True, lonlabels=True)
+        axs[i, 1].format(lonlabels=True)
 
 
 axs.format(
@@ -658,6 +717,7 @@ axs.format(
     title="",
     abcloc="ul",
     abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
     rowlabels=[f"Cluster {i}" for i in range(1, 5)],
     collabels=["AR Frequency", "Total precipitation fraction"],
     suptitle="AR clusters ensemble std.",
@@ -671,12 +731,31 @@ fig.savefig("../../figures/ann_std_precip_ar_ens_per_cluster.svg")
 #### Average timestep
 
 ```{python}
+correlations = []
+for label in range(4):
+    corr = compute_spatial_correltion(
+        grouped_ars.isel(label=label).ar_tracked_id / 1464,
+        ar_precip_ens_avg_ts.isel(label=label).tp / 6,
+    )
+    correlations.append(corr)
+correlations = xr.concat(correlations, dim="label")
+```
+
+```{python}
+grouped_ars.isel(label=0)
+```
+
+```{python}
+group_avg_ar = ar_ens_ds.groupby(["label"]).mean().load()
+```
+
+```{python}
 fig, axs = pplt.subplots(
     figwidth="12cm",
     nrows=4,
     ncols=2,
-    proj=4 * 2 * ["nsper"],
-    proj_kw={"lon_0": 14, "lat_0": 65},
+    proj=4 * 2 * ["lcc"],
+    proj_kw={"central_longitude": 15},
     sharey=False,
     sharex=False,
     abc=True,
@@ -684,18 +763,32 @@ fig, axs = pplt.subplots(
 vmax = ar_precip_ens_avg.tp.max().values
 for i in range(4):
     cm = (grouped_ars.isel(label=i).ar_tracked_id / 1464 * 100).plot(
+        # cm = (group_avg_ar.isel(label=i).ar_tracked_id).plot(
         ax=axs[i, 0],
         vmin=0,
         rasterized=True,
         add_colorbar=False,
         # cbar_kwargs={"label": "Frequency [%]"},
     )
-    axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15)
+    axs[i, 0].colorbar(cm, label="Frequency [%]", width=0.15)
 
-    cm = (ar_precip_ens_avg_ts.isel(label=i).tp * 1000).plot(
+    cm = (ar_precip_ens_avg_ts.isel(label=i).tp / 6).plot(
         ax=axs[i, 1], vmin=0, cmap="oslo_r", rasterized=True, add_colorbar=False
     )
-    axs[i, 1].colorbar(cm, label="Total precipitation\n [mm]", width=0.15)
+    axs[i, 1].colorbar(cm, label="Precipitation [mm/h]", width=0.15)
+
+    axs[i, 1].annotate(
+        f"Corr: {correlations.isel(label=i).values:.2f}",
+        (0.95, 0.95),
+        xycoords="axes fraction",
+        ha="right",
+        va="top",
+        bbox={"boxstyle": "square", "facecolor": "white"},
+    )
+    axs[i, 0].format(latlabels=True)
+    if i == 3:
+        axs[i, 0].format(latlabels=True, lonlabels=True)
+        axs[i, 1].format(lonlabels=True)
 
 
 axs.format(
@@ -706,8 +799,9 @@ axs.format(
     title="",
     abcloc="ul",
     abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
     rowlabels=[f"Cluster {i}" for i in range(1, 5)],
-    collabels=["AR Frequency", "Timestep avg. total precipitation"],
+    collabels=["AR Frequency", "Timestep avg. precipitation"],
     suptitle="Ensemble average AR clusters",
 )
 ```
@@ -757,7 +851,11 @@ freqs = (
     / np.asarray(list(season_samples.values())).reshape((1, 1, -1, 1))
     / 4
     * 100
-)
+)  # /  grouped_ars.ar_tracked_id / 1464 * 100
+```
+
+```{python}
+grouped_ars
 ```
 
 ```{python}
@@ -768,8 +866,8 @@ fig, axs = pplt.subplots(
     figwidth="12cm",
     nrows=nrows,
     ncols=ncols,
-    proj=nrows * ncols * ["nsper"],
-    proj_kw={"lon_0": 14, "lat_0": 65},
+    proj=nrows * ncols * ["lcc"],
+    proj_kw={"central_longitude": 15},
     sharey=False,
     sharex=False,
     abc=True,
@@ -794,6 +892,7 @@ axs.format(
     title="",
     abcloc="ul",
     abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
     rowlabels=[f"Cluster {i}" for i in range(1, 5)],
     collabels=season_order,
     suptitle="Ensemble average seasonal AR frequencies",
@@ -804,16 +903,15 @@ axs.format(
 fig.savefig("../../figures/ens_avg_seasonal_ar_clusters.svg")
 ```
 
-```{python}
 Standard deviation
-```
 
 ```{python}
-ar_ens_ds
-```
-
-```{python}
-season_groups_std = ar_ens_ds.groupby(["ardt", "label", "start_time.season", "start_time.year"]).sum().mean("year").std("ardt")
+season_groups_std = (
+    ar_ens_ds.groupby(["ardt", "label", "start_time.season", "start_time.year"])
+    .sum()
+    .mean("year")
+    .std("ardt")
+)
 ```
 
 ```{python}
@@ -832,8 +930,8 @@ fig, axs = pplt.subplots(
     figwidth="12cm",
     nrows=nrows,
     ncols=ncols,
-    proj=nrows * ncols * ["nsper"],
-    proj_kw={"lon_0": 14, "lat_0": 65},
+    proj=nrows * ncols * ["lcc"],
+    proj_kw={"central_longitude": 15},
     sharey=False,
     sharex=False,
     abc=True,
@@ -858,6 +956,7 @@ axs.format(
     title="",
     abcloc="ul",
     abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
     rowlabels=[f"Cluster {i}" for i in range(1, 5)],
     collabels=season_order,
     suptitle="Seasonal AR frequencies ensemble std.",
@@ -974,8 +1073,8 @@ fig, axs = pplt.subplots(
     figwidth="12cm",
     nrows=nrows,
     ncols=ncols,
-    proj=nrows * ncols * ["nsper"],
-    proj_kw={"lon_0": 14, "lat_0": 65},
+    proj=nrows * ncols * ["lcc"],
+    proj_kw={"central_longitude": 15},
     sharey=False,
     sharex=False,
     abc=True,
@@ -996,6 +1095,7 @@ axs.format(
     title="",
     abcloc="ul",
     abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
     rowlabels=[f"Cluster {i}" for i in range(1, 5)],
     collabels=[f"{bin}" for bin in freqs.nao_bins.values],
     suptitle="NAO-grouped AR frequencies ensemble averages",
@@ -1007,7 +1107,13 @@ fig.savefig("../../figures/ens_avg_nao_ar_clusters.svg")
 ```
 
 ```{python}
-ar_nao_std_groups = ar_ens_ds.groupby(nao=BinGrouper(nao_bins), label=UniqueGrouper(), ardt=UniqueGrouper()).sum().std("ardt")
+ar_nao_std_groups = (
+    ar_ens_ds.groupby(
+        nao=BinGrouper(nao_bins), label=UniqueGrouper(), ardt=UniqueGrouper()
+    )
+    .sum()
+    .std("ardt")
+)
 ```
 
 ```{python}
@@ -1021,7 +1127,7 @@ fig, axs = pplt.subplots(
     figwidth="12cm",
     nrows=nrows,
     ncols=ncols,
-    proj=nrows * ncols * ["nsper"],
+    proj=nrows * ncols * ["lcc"],
     proj_kw={"lon_0": 14, "lat_0": 65},
     sharey=False,
     sharex=False,
@@ -1043,6 +1149,7 @@ axs.format(
     title="",
     abcloc="ul",
     abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
     rowlabels=[f"Cluster {i}" for i in range(1, 5)],
     collabels=[f"{bin}" for bin in freqs.nao_bins.values],
     suptitle="NAO-grouped AR frequencies ensemble std.",
@@ -1052,4 +1159,3 @@ axs.format(
 ```{python}
 fig.savefig("../../figures/ens_std_nao_ar_clusters.svg")
 ```
-
