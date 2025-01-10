@@ -4,7 +4,7 @@ This is just somewhere to keep things. Eventually this is just submitted in a fo
 
 # EGU 2025 Abstract to Atmospheric river session
 
-## Atmospheric Rivers and their influence on precipitation in Scandinavia
+## Spatial and temporal characteristics of atmospheric rivers in Scandinavia and their influence on the regional precipitation
 
 Atmospheric rivers (ARs) play an important role in both the global and regional climate systems.
 While there is extensive research on ARs and their relationship to precipitation in North America and East Asia, the role of ARs in the regional climate of Scandinavia remains understudied.
