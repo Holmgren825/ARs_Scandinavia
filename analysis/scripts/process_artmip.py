@@ -11,9 +11,9 @@ from shapely.ops import unary_union
 from tqdm.autonotebook import tqdm
 
 ARTMIP_PATHS = [
-    # "/data/atmospheric_rivers/artmip/ERA5.ar.Mundhenk_v3.1hr/",
-    # "/data/atmospheric_rivers/artmip/ERA5.ar.Reid500.1hr/",
-    # "/data/atmospheric_rivers/artmip/ERA5.ar.GuanWaliser_v2.1hr/",
+    "/data/atmospheric_rivers/artmip/ERA5.ar.Mundhenk_v3.1hr/",
+    "/data/atmospheric_rivers/artmip/ERA5.ar.Reid500.1hr/",
+    "/data/atmospheric_rivers/artmip/ERA5.ar.GuanWaliser_v2.1hr/",
     # NOTE: This one requires some lat/lons.
     "/data/atmospheric_rivers/artmip/ERA5.ar.TempestLR.1hr/",
 ]
@@ -33,10 +33,12 @@ def generate_shp() -> BaseGeometry:
         + (gdf["ADMIN"] == "Denmark")
     ]
     scand_gdf.loc[scand_gdf.index == 88, "geometry"] = (
-        scand_gdf.loc[scand_gdf.index == 88, "geometry"].iloc[0].geoms[1]
+        scand_gdf.loc[scand_gdf.index == 88, "geometry"].iloc[0].geoms[0]
     )
 
+    # NOTE: Create a union of the polygon, then buffer it in two passes.
     scand_shape = unary_union(scand_gdf.geometry)
+    scand_shape = scand_shape.buffer(0.85).buffer(-0.15)
     return scand_shape
 
 

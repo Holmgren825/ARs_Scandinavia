@@ -7,7 +7,7 @@ Scripts (analysis/scripts) are run in the following order to generate the result
 3. collapse_tracked_ars.py
 4. run_artmip_kmeans.py
 5. gen_artmip_cluster_plots.py
-6. et_nao_freqs_artmip.py
+6. get_nao_freqs_artmip.py
 
 - run_artmip_pca.py
 
