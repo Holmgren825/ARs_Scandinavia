@@ -32,7 +32,7 @@ START_YEAR = "1980"
 END_YEAR = "2019"
 RESAMPLE = ["6h", "2d", "5d", "10d", "15d", "20d"]
 N_CLUSTERS = 6
-OVERWRITE = False
+OVERWRITE = True
 
 logger = logging.getLogger(__name__)
 

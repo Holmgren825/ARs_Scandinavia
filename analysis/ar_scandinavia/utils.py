@@ -113,6 +113,7 @@ def compute_ar_pr_values_collapsed(
 
     ar_vals = []
     pr_vals = []
+    pr_time_dim_name = precip_ds.cf["time"].name
     for cluster_id in range(n_clusters):
         curr_cluster_mask = (cluster_labels == cluster_id).compute()
         times = np.asarray(
@@ -126,7 +127,7 @@ def compute_ar_pr_values_collapsed(
         cluster_precip = []
         ar_lengths = []
         for time in times:
-            precip_ar_sum = precip_ds.tp.sel(
+            precip_ar_sum = precip_ds.tp.cf.sel(
                 time=slice(time[0], time[1]),
             )
             cluster_precip.append(precip_ar_sum)
@@ -139,10 +140,10 @@ def compute_ar_pr_values_collapsed(
             ).sum("sample_id")
         )
 
-        cluster_precip_da = xr.concat(cluster_precip, dim="time")
+        cluster_precip_da = xr.concat(cluster_precip, dim=pr_time_dim_name)
         # Get the number of timesteps in each cluster.
         cluster_counts.append(cluster_precip_da.shape[0])
-        pr_vals.append(cluster_precip_da.sum("time"))
+        pr_vals.append(cluster_precip_da.sum(pr_time_dim_name))
 
     ar_vals = client.compute(ar_vals)
     pr_vals = client.compute(pr_vals)

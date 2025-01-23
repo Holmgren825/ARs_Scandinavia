@@ -24,7 +24,7 @@ STATS_CSV_PATH = "/data/projects/atmo_rivers_scandinavia/collapsed_stats_all.csv
 
 START_YEAR = "1980"
 END_YEAR = "2019"
-OVERWRITE = False
+OVERWRITE = True
 MAXIMUM_AR_LENGTH = 300
 
 logger = logging.getLogger(__name__)
