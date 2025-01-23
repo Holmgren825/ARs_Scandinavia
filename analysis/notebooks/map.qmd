@@ -1,0 +1,96 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .qmd
+      format_name: quarto
+      format_version: '1.0'
+      jupytext_version: 1.16.4
+  kernelspec:
+    display_name: ar_ident
+    language: python
+    name: ar_ident
+---
+
+```{python}
+from pathlib import Path
+
+import cartopy.crs as ccrs
+import geopandas as gpd
+import proplot as plt
+```
+
+```{python}
+gdf = gpd.read_file("../etc/ne_50_admin_0_countries/ne_50m_admin_0_countries.shp")
+scand_gdf = gdf[
+    (gdf["ADMIN"] == "Sweden")
+    + (gdf["ADMIN"] == "Norway")
+    + (gdf["ADMIN"] == "Denmark")
+]
+scand_gdf.loc[scand_gdf.index == 88, "geometry"] = (
+    scand_gdf.loc[scand_gdf.index == 88, "geometry"].iloc[0].geoms[0]
+)
+```
+
+```{python}
+LAT_SLICE = (54, 71)
+LON_SLICE = (-5, 40)
+```
+
+```{python}
+fig, ax = plt.subplots(
+    figwidth="10cm",
+    proj="hammer",
+    proj_kw={"central_longitude": 15},
+)
+scand_gdf.geometry.plot(ax=ax, transform=ccrs.PlateCarree())
+
+ax.format(
+    coast=True,
+    reso="hi",
+    latlabels=True,
+    lonlabels=True,
+    lonlim=LON_SLICE,
+    latlim=LAT_SLICE,
+    title="",
+)
+```
+
+```{python}
+fig.savefig("../../figures/scandi_map.svg")
+```
+
+```{python}
+from shapely.ops import unary_union
+```
+
+```{python}
+shape = unary_union(scand_gdf.geometry)
+```
+
+```{python}
+smoothing = 0.85
+un_smoothing = -0.15
+join_style = "round"  # round, mitre, bevel
+fig, ax = plt.subplots(
+    figwidth="10cm",
+    proj="hammer",
+    proj_kw={"central_longitude": 15},
+)
+
+gpd.GeoSeries(
+    shape.buffer(smoothing, join_style=join_style).buffer(
+        un_smoothing, join_style=join_style
+    )
+).plot(ax=ax[0], color="C1", transform=ccrs.PlateCarree())
+gpd.GeoSeries(shape).plot(ax=ax[0], transform=ccrs.PlateCarree())
+ax.format(
+    coast=True,
+    reso="hi",
+    latlabels=True,
+    lonlabels=True,
+    lonlim=LON_SLICE,
+    latlim=LAT_SLICE,
+    title="",
+)
+```
