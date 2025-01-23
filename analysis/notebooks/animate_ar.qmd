@@ -1,0 +1,229 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .qmd
+      format_name: quarto
+      format_version: '1.0'
+      jupytext_version: 1.16.4
+  kernelspec:
+    display_name: ar_ident
+    language: python
+    name: ar_ident
+---
+
+```{python}
+%load_ext autoreload
+```
+
+```{python}
+%autoreload 2
+```
+
+```{python}
+import re
+from glob import glob
+from itertools import combinations
+from pathlib import Path
+
+import cf_xarray
+import dask.array as da
+import numpy as np
+import pandas as pd
+import proplot as pplt
+import scipy
+import xarray as xr
+from ar_identify.metrics import spatial_jaccard_score
+from ar_scandinavia.pca_utils import combine_artmip_pca_results
+from ar_scandinavia.utils import (
+    compute_ar_pr_values_collapsed,
+    compute_spatial_correltion,
+    subsel_ds,
+)
+from cartopy import crs as ccrs
+from dask_ml.cluster import KMeans
+from distributed.client import Client
+from tqdm.autonotebook import tqdm
+from xr_utils.coordinates import conv_lon_to_180
+```
+
+```{python}
+LAT_SLICE = (50, 74)
+LON_SLICE = (-10, 45)
+```
+
+```{python}
+client = Client()
+```
+
+```{python}
+import os
+```
+
+```{python}
+BASE_PATH = "/data/projects/atmo_rivers_scandinavia/"
+ARDT_NAMES = ["Mundhenk_v3", "Reid500", "GuanWaliser_v2", "TempestLR"]
+```
+
+First we get the timesteps for the differnt ARDTs
+
+Then we can select the precipitation timesteps for each of them:
+At this points, we don't really need to care about the ensemble members, we can just pile all of it into a single large 1d array?
+- For the histograms yes, but not for the maps? 
+- But we can remove the time coordinate for now, but it would be nice to keep the groupby functionality.
+
+```{python}
+ardt_name = ARDT_NAMES[0]
+ar_path = os.path.join(
+    BASE_PATH,
+    f"ERA5.{ardt_name}",
+    f"ERA5.{ardt_name}.scand_ars.collapsed.1980-2019.zarr",
+)
+ar_ds = xr.open_zarr(ar_path)
+ar_ds = subsel_ds(ar_ds, LAT_SLICE, LON_SLICE)
+```
+
+```{python}
+event = ar_ds.isel(sample_id=5)
+```
+
+```{python}
+start, end = event.sample_id.values.reshape(-1)[0][-23:].split("-")
+```
+
+```{python}
+year = start[:4]
+```
+
+```{python}
+ivt_ds = xr.open_dataset(
+    f"/data/era5/ivt/ivt-{year}-None-None-ext_90_-180_0_180.nc", chunks="auto"
+)
+```
+
+```{python}
+ivt_ds = subsel_ds(ivt_ds, LAT_SLICE, LON_SLICE).load()
+```
+
+```{python}
+from matplotlib import animation
+```
+
+```{python}
+ivt_animate = ivt_ds.sel(time="1982-07")
+```
+
+```{python}
+pplt.rc["figure.facecolor"] = "#191919"
+pplt.rc["axes.edgecolor"] = "white"
+pplt.rc["label.color"] = "white"
+pplt.rc["title.color"] = "white"
+pplt.rc["tick.labelcolor"] = "white"
+```
+
+```{python}
+fig, ax = pplt.subplots(
+    figwidth="1200px",
+    proj="moll",
+)
+ax.format(coast=True, reso="med", latlim=(0, 90), facecolor="black")
+
+cm = ivt_animate.isel(time=0).ivt.plot.pcolormesh(
+    ax=ax,
+    vmin=0,
+    vmax=700,
+    levels=40,
+    cbar_kwargs={"label": "IVT [kg m$^{-1}$ s$^{-1}$]"},
+)
+
+
+def update(frame):
+    # Update colormesh
+    cm.set_array(ivt_animate.ivt.isel(time=frame).values.ravel())
+
+    date = str(ivt_animate.ivt.isel(time=frame).time.values)[:16]
+    ax.format(title=f"time = {date}")
+    return cm
+
+
+frames = range(124)
+```
+
+```{python}
+anim = animation.FuncAnimation(
+    fig, update, frames=frames, blit=False, interval=100, repeat=False
+)
+
+anim.save("ivt.mp4", writer="ffmpeg", dpi=300, savefig_kwargs={"facecolor": "#191919"})
+```
+
+```{python}
+ar_ivt = ivt_ds.sel(time=slice(start, end))
+```
+
+```{python}
+tracked_ar = xr.open_zarr(
+    "/data/projects/atmo_rivers_scandinavia/ERA5.Mundhenk_v3/ERA5.ar_id.Mundhenk_v3.6hr.scand_ars.tracked.19800101-20191231.zarr/"
+)
+```
+
+```{python}
+tracked_ar = subsel_ds(
+    tracked_ar.sel(time=slice(start, end)), LAT_SLICE, LON_SLICE
+).load()
+```
+
+```{python}
+tracked_ar.isel(time=7).ar_tracked_id.plot()
+```
+
+```{python}
+tracked_ar = tracked_ar.rename_dims({"lat": "latitude", "lon": "longitude"})
+tracked_ar = tracked_ar.rename_vars({"lat": "latitude", "lon": "longitude"})
+```
+
+```{python}
+ar_ivt = ar_ivt.where(tracked_ar.ar_tracked_id > 0)
+```
+
+```{python}
+ar_ivt
+```
+
+```{python}
+from ar_identify.plotting import animate_ar_feature
+```
+
+```{python}
+fig, axs = pplt.subplots(
+    figwidth="1080px",
+    proj="lcc",
+    proj_kw={"central_longitude": 15},
+)
+axs.format(
+    lonlim=LON_SLICE,
+    latlim=LAT_SLICE,
+)
+```
+
+```{python}
+animate_ar_feature(ar_ivt.ivt, "test.mp4", fig=fig)
+```
+
+IVT plot
+
+```{python}
+fig, axs = pplt.subplots(
+    figwidth="1080px",
+    proj="lcc",
+    proj_kw={"central_longitude": 15},
+)
+axs.format(
+    lonlim=LON_SLICE,
+    latlim=LAT_SLICE,
+)
+```
+
+```{python}
+animate_ar_feature(ivt_ds.isel(time=slice(0, 100)).ivt, "ivt.mp4", fig=fig)
+```
