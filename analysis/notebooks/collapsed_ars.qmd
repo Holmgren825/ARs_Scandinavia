@@ -55,6 +55,7 @@ from xr_utils.coordinates import conv_lon_to_180
 
 ```{python}
 pplt.rc["font.size"] = 7
+pplt.rc["cmap.discrete"] = False
 ```
 
 ```{python}
@@ -1020,7 +1021,7 @@ test = (
 ```{python}
 fig, ax = pplt.subplots(ncols=4)
 for i in range(4):
-    test.isel(ardt=i).tp.plot(ax=ax[i], vmin=0)
+    test.isel(ardt=i).tp.plot(ax=ax[i], vmin=0, discrete=False)
 ```
 
 ```{python}
@@ -1146,6 +1147,10 @@ correlations = xr.concat(correlations, dim="label")
 ```
 
 ```{python}
+axs[0, 0].colorbar()
+```
+
+```{python}
 fig, axs = pplt.subplots(
     figwidth="12cm",
     nrows=4,
@@ -1165,7 +1170,7 @@ for i in range(4):
         rasterized=True,
         add_colorbar=False,
     )
-    axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15)
+    axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15, locator="multiple", locator_kw={"base": 0.5})
     curr_tp = ar_precip_ens_avg.isel(label=i).tp
     cm = (curr_tp / ann_avg_precip_ds * 100).plot(
         ax=axs[i, 1],
@@ -1330,6 +1335,7 @@ for i in range(4):
         add_colorbar=False,
     )
     axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15)
+    #axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15, locator="multiple", locator_kw={"base": 0.5})
     curr_tp = ar_precip_cluster_std.isel(label=i).tp
     cm = (curr_tp / ann_avg_precip_ds * 100).plot(
         ax=axs[i, 1],
@@ -1837,3 +1843,4 @@ axs.format(
 ```{python}
 fig.savefig("../../figures/ens_std_nao_ar_clusters.svg")
 ```
+
