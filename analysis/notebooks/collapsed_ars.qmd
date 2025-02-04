@@ -88,58 +88,6 @@ ann_avg_precip_ds = (
 ann_avg_precip_ds.attrs["units"] = "mm"
 ```
 
-# Check relevant number of clusters.
-
-```{python}
-from sklearn.metrics import silhouette_score
-```
-
-```{python}
-data = xr.open_zarr(
-    "/data/projects/atmo_rivers_scandinavia/ERA5.Mundhenk_v3/ERA5.Mundhenk_v3.scand_ars.collapsed.1980-2019.zarr/"
-)
-data = subsel_ds(data, LAT_SLICE, LON_SLICE)
-```
-
-```{python}
-data = data.fillna(0)
-```
-
-```{python}
-data.ar_tracked_id
-```
-
-```{python}
-data = data.ar_tracked_id.data
-data = data.reshape(data.shape[0], -1)
-data[da.isnan(data)] = 0
-data = data.persist()
-```
-
-```{python}
-intertia_scores = []
-silhouette_scores = []
-for n_clusters in tqdm(range(2, 10)):
-    kmeans = KMeans(n_clusters=n_clusters)
-    kmeans.fit(data)
-    intertia_scores.append(kmeans.inertia_)
-    labels = kmeans.predict(data)
-    silhouette_scores.append(silhouette_score(data, labels))
-```
-
-```{python}
-fig, axs = pplt.subplots(ncols=2, sharey=False)
-axs[0].plot(range(2, 10), intertia_scores)
-axs[0].format(ylabel="WCSS")
-axs[1].plot(range(2, 10), silhouette_scores)
-axs[1].format(ylabel="Silhouette score")
-axs.format(xlabel="N clusters", suptitle="N cluster evaluation [Mundhenk]")
-```
-
-```{python}
-fig.savefig("../../figures/n_cluster_eval.svg")
-```
-
 # Read in data
 
 First we get the timesteps for the differnt ARDTs
