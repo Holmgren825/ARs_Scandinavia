@@ -88,6 +88,12 @@ ann_avg_precip_ds = (
 ann_avg_precip_ds.attrs["units"] = "mm"
 ```
 
+Get annual time steps array.
+
+```{python}
+n_days = precip_ds.valid_time.groupby("valid_time.year").count()
+```
+
 # Read in data
 
 First we get the timesteps for the differnt ARDTs
@@ -467,8 +473,7 @@ How many AR time steps do we get during the average year?
 
 ```{python}
 ar_ann_avg_frq = (
-    ar_ens_ds.groupby(["ardt", "start_time.year"])
-    .sum()
+    (ar_ens_ds.groupby(["ardt", "start_time.year"]).sum() / n_days.values)
     .mean("year")
     .mean("ardt")
     .load()
@@ -482,7 +487,6 @@ corr = compute_spatial_correltion(
 ```
 
 ```{python}
-n_year_timesteps = 1464
 fig, axs = pplt.subplots(
     figwidth="8.3cm",
     nrows=3,
@@ -492,7 +496,7 @@ fig, axs = pplt.subplots(
     proj_kw={"central_longitude": 15},
     abc=True,
 )
-(ar_ann_avg_frq.ar_tracked_id / n_year_timesteps * 100).plot(
+(ar_ann_avg_frq.ar_tracked_id * 100).plot(
     ax=axs[0], vmin=0, cbar_kwargs={"label": "AR frequency [%]"}, rasterized=True
 )
 # vmax = max(n_ar_ann_avg.max().values, ar_ann_avg.max().values)
@@ -649,7 +653,10 @@ Groupby `ardt` as before, but now reduce the resulting dimension using the stand
 
 ```{python}
 ar_ann_avg_std_frq = (
-    ar_ens_ds.groupby(["ardt", "start_time.year"]).sum().mean("year").std("ardt").load()
+    (ar_ens_ds.groupby(["ardt", "start_time.year"]).sum() / n_days.values)
+    .mean("year")
+    .std("ardt")
+    .load()
 )
 ```
 
@@ -664,7 +671,7 @@ fig, axs = pplt.subplots(
     abc=True,
 )
 
-(ar_ann_avg_std_frq.ar_tracked_id / n_year_timesteps * 100).plot(
+(ar_ann_avg_std_frq.ar_tracked_id * 100).plot(
     ax=axs[0], vmin=0, cbar_kwargs={"label": "AR frequency [%]"}, rasterized=True
 )
 # vmax = max(n_ar_ann_avg.max().values, ar_ann_avg.max().values)
@@ -706,65 +713,61 @@ fig.savefig("../../figures/ann_avg_precip_ar_ens_std.svg")
 ## Trends
 
 ```{python}
-ar_ens_ds
-```
-
-```{python}
 weights = np.cos(np.deg2rad(ar_ens_ds.lat))
 
-ar_trend = (
-    ar_ens_ds.groupby(["start_time.year", "ardt"])
-    .sum()
-    .weighted(weights)
-    .ar_tracked_id
-    / 1464 # What about leap years?
-    * 100
-    .mean(["lat", "lon"])
-)
-ar_avg_trend = ar_trend.mean("ardt")
-ar_avg_trend_std = ar_trend.std("ardt")
+ar_trend = ar_ens_ds.ar_tracked_id.groupby(["start_time.year", "ardt"]).sum().weighted(
+    weights
+).mean(["lat", "lon"]) / n_days.values.reshape((-1, 1))
+ar_trend = ar_trend.compute()
 ```
 
 ```{python}
-ar_trend_max = (
-    ar_ens_ds.groupby(["start_time.year", "ardt"])
-    .sum()
-    .weighted(weights)
-    .quantile(0.99, dim=["lat", "lon"])
-    .ar_tracked_id
-    / 1464 # Leap years.
-    * 100
-)
-ar_avg_trend_max = ar_trend_max.mean("ardt")
-ar_avg_trend_max_std = ar_trend_max.std("ardt")
+ar_trend_max = ar_ens_ds.groupby(["start_time.year", "ardt"]).sum().weighted(
+    weights
+).quantile(0.99, dim=["lat", "lon"]).ar_tracked_id / n_days.values.reshape((-1, 1))
+ar_trend_max = ar_trend_max.compute()
 ```
 
-Do one line per algo, two panels.
+```{python}
+import pymannkendall as mk
+```
 
 ```{python}
-alpha = 0.1
-fig, ax = pplt.subplots(figwidth="8.3cm")
+mk_res_avg = []
+for ardt_data in ar_trend.values.T:
+    results = mk.original_test(ardt_data)
+    mk_res_avg.append(results.p)
+mk_res_ext = []
+for ardt_data in ar_trend_max.values.T:
+    results = mk.original_test(ardt_data)
+    mk_res_ext.append(results.p)
+```
+
+```{python}
+fig, ax = pplt.subplots(figwidth="12cm", sharey=True, ncols=2, abc=True)
 
 time = ar_avg_trend.year
 
 # Spatial averages
-ar_avg_trend.plot(ax=ax, label="Ens. avg.")
-std_min = ar_avg_trend - ar_avg_trend_std  # .isel(quantile=1)
-std_p = ar_avg_trend + ar_avg_trend_std  # .isel(quantile=1)
-ax.fill_between(time, std_min, std_p, alpha=alpha, label="Ens. std")
+for i in range(4):
+    label = f"{ar_trend.isel(ardt=i).ardt.values}\np avg: {mk_res_avg[i]:.2f}\np ext:{mk_res_ext[i]:.2f}"
+    (ar_trend.isel(ardt=i) * 100).plot(ax=ax[0], label=label)
 
 # Spatial extremes
-ar_avg_trend_max.plot(ax=ax, label="Ens. avg.")
-std_min = ar_avg_trend_max - ar_avg_trend_max_std  # .isel(quantile=1)
-std_p = ar_avg_trend_max + ar_avg_trend_max_std  # .isel(quantile=1)
-ax.fill_between(time, std_min, std_p, alpha=alpha, label="Ens. std")
+for i in range(4):
+    (ar_trend_max.isel(ardt=i) * 100).plot(ax=ax[1])
 
-ax.legend()
+fig.legend(loc="b", ncols=4)
 ax.format(
     xlabel="Year",
     ylabel="Ann. avg. frequency [%]",
     suptitle="Annual average AR frequency",
+    collabels=["Spatial average", "Spatial extreme"],
     title="",
+    ylim=(0, 16),
+    abcloc="ul",
+    abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
 )
 ```
 
@@ -787,8 +790,8 @@ Here we compute the spatial average and 75th percentile before doing the histogr
 ar_precip_ens = ar_precip_ens.compute()
 n_ar_precip_ens = n_ar_precip_ens.compute()
 
-ar_precip_ens_nz = ar_precip_ens#.where(ar_precip_ens.tp > 0, drop=True)
-n_ar_precip_ens_nz = n_ar_precip_ens#.where(n_ar_precip_ens.tp > 0, drop=True)
+ar_precip_ens_nz = ar_precip_ens  # .where(ar_precip_ens.tp > 0, drop=True)
+n_ar_precip_ens_nz = n_ar_precip_ens  # .where(n_ar_precip_ens.tp > 0, drop=True)
 ```
 
 ```{python}
@@ -889,7 +892,7 @@ fig, axs = pplt.subplots(
     abc=True,
 )
 
-qtile = 1#0.975
+qtile = 1  # 0.975
 vmax = max(
     ar_avg_pr_ts.tp.quantile(qtile).values, n_ar_avg_pr_ts.tp.quantile(qtile).values
 )
@@ -909,7 +912,7 @@ pr_cbar = fig.colorbar(
     rows=(1, 2),
     length=0.7,
     label="Precipitation [mm/h]",
-    #extend="max",
+    # extend="max",
 )
 
 axs[2].stairs(hist_ar, bins, label="AR [Avg.]", color="C0")
@@ -1062,7 +1065,6 @@ ar_precip_ens = ar_precip_ens.assign_coords({"label": ar_ts_ens})
 ```{python}
 # NOTE: Need to divide by 4 since we have 4 ARDTs?
 ar_precip_ens_avg = (
-    # ar_precip_ens.groupby(["label", "valid_time.year"]).sum().mean("year") / 4
     ar_precip_ens.groupby(["label", "ardt", "valid_time.year"])
     .sum()
     .mean("year")
@@ -1072,9 +1074,13 @@ ar_precip_ens_avg_ts = ar_precip_ens.groupby(["label"]).mean().load()
 ```
 
 ```{python}
+n_days_groups = n_days.values.reshape((1, 1, -1, 1, 1))
+```
+
+```{python}
 grouped_ars = (
-    ar_ens_ds.groupby(["start_time.year", "label", "ardt"]).sum().mean(["year", "ardt"])
-)
+    (ar_ens_ds.groupby(["start_time.year", "label", "ardt"]).sum() / n_days_groups)
+).mean(["year", "ardt"])
 ```
 
 ```{python}
@@ -1095,10 +1101,6 @@ correlations = xr.concat(correlations, dim="label")
 ```
 
 ```{python}
-axs[0, 0].colorbar()
-```
-
-```{python}
 fig, axs = pplt.subplots(
     figwidth="12cm",
     nrows=4,
@@ -1112,13 +1114,19 @@ fig, axs = pplt.subplots(
 vmax = ar_precip_ens_avg.tp.max().values
 cmap = pplt.Colormap("oslo_r", right=0.8)
 for i in range(4):
-    cm = (grouped_ars.isel(label=i).ar_tracked_id / 1464 * 100).plot(
+    cm = (grouped_ars.isel(label=i).ar_tracked_id * 100).plot(
         ax=axs[i, 0],
         vmin=0,
         rasterized=True,
         add_colorbar=False,
     )
-    axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15, locator="multiple", locator_kw={"base": 0.5})
+    axs[i, 0].colorbar(
+        cm,
+        label="Frequncy [%]",
+        width=0.15,
+        locator="multiple",
+        locator_kw={"base": 0.5},
+    )
     curr_tp = ar_precip_ens_avg.isel(label=i).tp
     cm = (curr_tp / ann_avg_precip_ds * 100).plot(
         ax=axs[i, 1],
@@ -1253,9 +1261,18 @@ ar_precip_cluster_std = ar_precip_cluster_std.load()
 
 ```{python}
 freq_cluster_std = (
-    ar_ens_ds.groupby(["ardt", "label", "start_time.year"])
-    # ar_ens_ds.where(ar_ens_ds.ardt!="Reid500", drop=True).groupby(["ardt", "label", "start_time.year"])
-    .sum()
+    (
+        ar_ens_ds.groupby(
+            [
+                "start_time.year",
+                "label",
+                "ardt",
+            ]
+        )
+        # ar_ens_ds.where(ar_ens_ds.ardt!="Reid500", drop=True).groupby(["ardt", "label", "start_time.year"])
+        .sum()
+        / n_days_groups
+    )
     .mean("year")
     .std("ardt")
     .load()
@@ -1276,14 +1293,14 @@ fig, axs = pplt.subplots(
 vmax = ar_precip_ens_avg.tp.max().values
 cmap = pplt.Colormap("oslo_r", right=0.8)
 for i in range(4):
-    cm = (freq_cluster_std.isel(label=i).ar_tracked_id / 1464 * 100).plot(
+    cm = (freq_cluster_std.isel(label=i).ar_tracked_id * 100).plot(
         ax=axs[i, 0],
         vmin=0,
         rasterized=True,
         add_colorbar=False,
     )
     axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15)
-    #axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15, locator="multiple", locator_kw={"base": 0.5})
+    # axs[i, 0].colorbar(cm, label="Frequncy [%]", width=0.15, locator="multiple", locator_kw={"base": 0.5})
     curr_tp = ar_precip_cluster_std.isel(label=i).tp
     cm = (curr_tp / ann_avg_precip_ds * 100).plot(
         ax=axs[i, 1],
@@ -1318,6 +1335,86 @@ axs.format(
 
 ```{python}
 fig.savefig("../../figures/ann_std_precip_ar_ens_per_cluster.svg")
+```
+
+### Trends
+
+```{python}
+weights = np.cos(np.deg2rad(ar_ens_ds.lat))
+group_ar_trends = (
+    (ar_ens_ds.groupby(["start_time.year", "label", "ardt"]).sum() / n_days_groups)
+    .weighted(weights)
+    .mean(["lat", "lon"])
+).compute()
+
+group_ar_trends_ext = (
+    (ar_ens_ds.groupby(["start_time.year", "label", "ardt"]).sum() / n_days_groups)
+    .weighted(weights)
+    .quantile(0.99, dim=["lat", "lon"])
+).compute()
+```
+
+```{python}
+group_ar_trends = group_ar_trends.fillna(0)
+group_ar_trends_ext = group_ar_trends_ext.fillna(0)
+```
+
+```{python}
+avg_res = np.zeros((4, 4))
+ext_res = np.zeros((4, 4))
+for label in range(4):
+    for ardt in range(4):
+        data = group_ar_trends.isel(ardt=ardt, label=label).ar_tracked_id.values
+        results = mk.original_test(data).p
+        avg_res[label, ardt] = results
+
+        data = group_ar_trends_ext.isel(ardt=ardt, label=label).ar_tracked_id.values
+        results = mk.original_test(data).p
+        ext_res[label, ardt] = results
+```
+
+
+```{python}
+fig, axs = pplt.subplots(
+    figwidth="12cm",
+    figheight="18cm",
+    nrows=4,
+    ncols=2,
+    # sharey=False,
+    # sharex=False,
+    abc=True,
+)
+for label in range(4):
+    for ardt in range(4):
+        (group_ar_trends.isel(ardt=ardt, label=label).ar_tracked_id * 100).plot(
+            ax=axs[label, 0],
+            label=f"p: {avg_res[label, ardt]:.2f}",
+        )
+        (group_ar_trends_ext.isel(ardt=ardt, label=label).ar_tracked_id * 100).plot(
+            ax=axs[label, 1],
+            label=f"p: {ext_res[label, ardt]:.2f}",
+        )
+        axs[label, 0].legend(loc="ur", ncols=2)
+        axs[label, 1].legend(loc="ur", ncols=2)
+
+handles, labels = axs[0, 0].get_legend_handles_labels()
+fig.legend(handles, group_ar_trends.ardt.values, loc="b", ncols=4)
+axs.format(
+    title="",
+    abcloc="ul",
+    abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
+    rowlabels=[f"Cluster {i}" for i in range(1, 5)],
+    collabels=["Spatial average", "Spatial extreme"],
+    suptitle="AR cluster trends",
+    ylim=(-0.2, 8),
+    xlabel="Year",
+    ylabel="Ann. avg. frequency [%]",
+)
+```
+
+```{python}
+fig.savefig("../../figures/ar_ann_avg_trends_per_cluster.svg")
 ```
 
 ## Average time step
@@ -1410,9 +1507,10 @@ ar_ens_ds = ar_ens_ds.load()
 
 ```{python}
 season_grouped_ars = (
-    ar_ens_ds.groupby(["start_time.season", "start_time.year", "label", "ardt"])
+    (ar_ens_ds.groupby(["start_time.season", "start_time.year", "label", "ardt"])
     # ar_ens_ds.groupby(["start_time.season", "start_time.year", "label"])
-    .sum()
+    .sum() / 
+    n_days.values.reshape((1, -1, 1, 1)))
     .mean("year")
     .mean("ardt")
 )
@@ -1441,11 +1539,8 @@ Pre-compute the frequencies.
 ```{python}
 freqs = (
     season_grouped_ars
-    # / np.asarray(list(season_samples.values())).reshape((1, 1, -1, 1))
-    / 1464
-    # / 4
     * 100
-)  # /  grouped_ars.ar_tracked_id / 1464 * 100
+)  
 ```
 
 ```{python}
@@ -1507,15 +1602,16 @@ fig.savefig("../../figures/ens_avg_seasonal_ar_clusters.svg")
 
 ```{python}
 season_groups_std = (
-    ar_ens_ds.groupby(["ardt", "label", "start_time.season", "start_time.year"])
-    .sum()
+    (ar_ens_ds.groupby(["ardt", "label", "start_time.season", "start_time.year"])
+    .sum() /
+     n_days.values.reshape((1, 1, 1, -1)))
     .mean("year")
     .std("ardt")
 )
 ```
 
 ```{python}
-freqs = season_groups_std / 1464 * 100
+freqs = season_groups_std * 100
 ```
 
 ```{python}
@@ -1630,6 +1726,27 @@ nao_da = xr.DataArray(nao_series)
 nao_bins = (-3.5, -0.5, 0, 0.5, 3.5)
 
 hist, bins = np.histogram(nao_series, nao_bins)
+```
+
+NAO seasonal plot.
+
+```{python}
+fig, ax = pplt.subplots(figwidth="8.3cm")
+test = nao_series.resample("D").mean()
+test.groupby(test.index.map(lambda t: t.dayofyear)).mean().plot(ax=ax, label="Mean")
+q75 = test.groupby(test.index.map(lambda t: t.dayofyear)).quantile(0.75)
+q25 = test.groupby(test.index.map(lambda t: t.dayofyear)).quantile(0.25)
+ax.fill_between(q75.index, q75, q25, alpha=0.5, label="25-75 percentile")
+ax.legend()
+ax.format(
+    xlabel="Day of year",
+    ylabel="NAO",
+    suptitle="Annual average NAO [1980-2019]"
+)
+```
+
+```{python}
+fig.savefig("../../figures/nao_season.svg")
 ```
 
 Select the nao values for dates when we have ARs
@@ -1791,4 +1908,3 @@ axs.format(
 ```{python}
 fig.savefig("../../figures/ens_std_nao_ar_clusters.svg")
 ```
-
