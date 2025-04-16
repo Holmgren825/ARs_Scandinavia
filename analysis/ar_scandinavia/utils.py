@@ -6,6 +6,7 @@ from typing import overload
 import numpy as np
 import xarray as xr
 from distributed.client import Client
+from xarray.core.types import Dims
 from xr_utils.coordinates import conv_lon_to_180
 
 logger = logging.getLogger(__name__)
