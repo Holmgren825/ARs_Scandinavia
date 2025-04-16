@@ -12,15 +12,18 @@ where = ["analysis/"]
 
 [tool.ruff]
 # Enable flake8-bugbear (`B`) rules.
-select = ["E", "F", "B", "W", "N", "ANN", "D", "C90"]
+line-length = 88
+indent-width = 4
 
+[tool.ruff.lint]
+
+select = ["E", "F", "B", "W", "N", "ANN", "D", "C90"]
 # Never enforce `E501` (line length violations).
 ignore = ["E501"]
-
 # Avoid trying to fix flake8-bugbear (`B`) violations.
 unfixable = ["F401"]
 
-[tool.ruff.per-file-ignores]
+[tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["E402", "F401"]
 "**/tests/*" = ["E402", "D"]
 
