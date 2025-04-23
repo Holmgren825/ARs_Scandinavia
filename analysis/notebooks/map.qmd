@@ -17,7 +17,7 @@ from pathlib import Path
 
 import cartopy.crs as ccrs
 import geopandas as gpd
-import proplot as plt
+import ultraplot as plt
 ```
 
 ```{python}
@@ -40,24 +40,24 @@ LON_SLICE = (-5, 40)
 ```{python}
 fig, ax = plt.subplots(
     figwidth="10cm",
-    proj="hammer",
+    proj="lcc",
     proj_kw={"central_longitude": 15},
 )
-scand_gdf.geometry.plot(ax=ax, transform=ccrs.PlateCarree())
+
+scand_gdf.plot(ax=ax, transform=ccrs.PlateCarree(), edgecolor="C1", lw=1, color="C1", alpha=0.7, zorder=5)
 
 ax.format(
+    land=True,
     coast=True,
-    reso="hi",
+    reso="med",
+    landcolor="bisque",
+    facecolor="ocean blue",
     latlabels=True,
     lonlabels=True,
     lonlim=LON_SLICE,
     latlim=LAT_SLICE,
     title="",
 )
-```
-
-```{python}
-fig.savefig("../../figures/scandi_map.svg")
 ```
 
 ```{python}
@@ -72,9 +72,10 @@ shape = unary_union(scand_gdf.geometry)
 smoothing = 0.85
 un_smoothing = -0.15
 join_style = "round"  # round, mitre, bevel
+
 fig, ax = plt.subplots(
     figwidth="10cm",
-    proj="hammer",
+    proj="lcc",
     proj_kw={"central_longitude": 15},
 )
 
@@ -82,11 +83,14 @@ gpd.GeoSeries(
     shape.buffer(smoothing, join_style=join_style).buffer(
         un_smoothing, join_style=join_style
     )
-).plot(ax=ax[0], color="C1", transform=ccrs.PlateCarree())
-gpd.GeoSeries(shape).plot(ax=ax[0], transform=ccrs.PlateCarree())
+).plot(ax=ax[0], color="C1", alpha=0.7, zorder=5, transform=ccrs.PlateCarree())
+
 ax.format(
     coast=True,
     reso="hi",
+    land=True,
+    landcolor="bisque",
+    facecolor="ocean blue",
     latlabels=True,
     lonlabels=True,
     lonlim=LON_SLICE,
@@ -94,3 +98,8 @@ ax.format(
     title="",
 )
 ```
+
+```{python}
+fig.savefig("../../figures/scandi_map.svg")
+```
+
