@@ -27,7 +27,7 @@ LON_SLICE = (-10, 45)
 
 START_YEAR = "1980"
 END_YEAR = "2019"
-N_CLUSTERS = 4
+N_CLUSTERS = {"Mundhenk_v3": 4, "Reid500": 6, "GuanWaliser_v2": 4, "TempestLR": 6}
 OVERWRITE = True
 
 logger = logging.getLogger(__name__)
@@ -59,11 +59,12 @@ def main() -> None:
             logger.info(f"START: kmeans {curr_ardt_path}")
 
             data = collapsed_ars_da.data
+            data[data > 1] = 1
             data = data.reshape(data.shape[0], -1)
             logger.info("Persisting AR to cluster.")
             data = data.persist()
 
-            kmeans = KMeans(n_clusters=N_CLUSTERS)
+            kmeans = KMeans(n_clusters=N_CLUSTERS[ardt_name[5:]])
             logger.info("Fitting kmeans")
             kmeans.fit(data)
 
