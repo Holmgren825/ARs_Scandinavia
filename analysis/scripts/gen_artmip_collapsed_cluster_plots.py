@@ -12,7 +12,7 @@ from ar_scandinavia.utils import compute_ar_pr_values_collapsed, subsel_ds
 from dask.distributed import Client
 from tqdm import tqdm
 
-PRECIP_PATH = "/data/era5/total_precipitation/total_precipitation_*.zarr/"
+PRECIP_PATH = "/data/era5/total_precipitation/total_precipitation-1979_2020-6h.zarr/"
 
 ARDT_NAMES = ["Mundhenk_v3", "Reid500", "GuanWaliser_v2", "TempestLR"]
 BASE_PATH = "/data/projects/atmo_rivers_scandinavia/"
@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def main() -> None:
-    """Run the Kmeans-clustering on artmip datasets."""
+    """Create AR cluster to precipitation plots."""
     logging.basicConfig(
         filename=Path(__file__).parent / "logs/gen_collapsed_cluster_plots.log",
         level=logging.INFO,
@@ -40,7 +40,7 @@ def main() -> None:
     precip_ds = xr.open_mfdataset(PRECIP_PATH, engine="zarr")
     precip_ds = subsel_ds(precip_ds, LAT_SLICE, LON_SLICE, START_YEAR, END_YEAR)
 
-    tot_pr = precip_ds.sum("time").load()
+    tot_pr = precip_ds.cf.sum("time").load()
 
     for ardt_name in tqdm(ARDT_NAMES):
         label_path = os.path.join(
@@ -65,6 +65,7 @@ def main() -> None:
             ar_vals, pr_vals, cluster_counts = compute_ar_pr_values_collapsed(
                 ar_ds, precip_ds, label_da, N_CLUSTERS, client
             )
+            logger.info(f"Generated plot for {ardt_name}")
             fig = cluster_plot(
                 ar_vals,
                 pr_vals,

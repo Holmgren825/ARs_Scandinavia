@@ -172,4 +172,3 @@ fig.format(
 ```{python}
 fig.savefig("../../figures/nao_bins_artmip.svg")
 ```
-
