@@ -1,0 +1,98 @@
+---
+title: Downsampling AR masks
+author: Erik Holmgren
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .qmd
+      format_name: quarto
+      format_version: '1.0'
+      jupytext_version: 1.16.4
+  kernelspec:
+    display_name: ar_ident
+    language: python
+    name: ar_ident
+---
+
+```{python}
+import cf_xarray
+import dask
+import dask.array as da
+import numpy as np
+import proplot as pplt
+import xarray as xr
+import zarr
+from ar_scandinavia.utils import subsel_ds
+from dask.distributed import Client
+from tqdm.autonotebook import tqdm
+```
+
+```{python}
+LAT_SLICE = (50, 74)
+LON_SLICE = (-10, 45)
+```
+
+```{python}
+client = Client()
+```
+
+```{python}
+paths = [
+    "/data/projects/atmo_rivers_scandinavia/ERA5.Mundhenk_v3/ERA5.Mundhenk_v3.scand_ars.collapsed.1980-2019.zarr/",
+    "/data/projects/atmo_rivers_scandinavia/ERA5.GuanWaliser_v2/ERA5.GuanWaliser_v2.scand_ars.collapsed.1980-2019.zarr/",
+    "/data/projects/atmo_rivers_scandinavia/ERA5.TempestLR/ERA5.TempestLR.scand_ars.collapsed.1980-2019.zarr/",
+    "/data/projects/atmo_rivers_scandinavia/ERA5.Reid500/ERA5.Reid500.scand_ars.collapsed.1980-2019.zarr/",
+]
+```
+
+```{python}
+ds_list = []
+for path in paths:
+    ds = xr.open_zarr(path)
+    ds = subsel_ds(ds, LAT_SLICE, LON_SLICE)
+    ds_list.append(ds)
+```
+
+```{python}
+ds = xr.concat(ds_list, dim="ardt")
+```
+
+```{python}
+test = (
+    ds.coarsen(lat=8, lon=8, boundary="pad")
+    .max()
+    .groupby("ardt")
+    .sum("sample_id")
+    .ar_tracked_id.load()
+)
+orig = ds.groupby("ardt").sum("sample_id").ar_tracked_id.load()
+```
+
+```{python}
+fig, ax = pplt.subplots(
+    ncols=2,
+    nrows=4,
+    proj="lcc",
+    proj_kw={"central_longitude": 15},
+)
+for i in range(4):
+    (orig.isel(ardt=i) / 58440 * 100).plot(
+        ax=ax[i, 0], vmin=0, cbar_kwargs={"label": "Freq. [%]"}, rasterized=True
+    )
+    (test.isel(ardt=i) / 58440 * 100).plot(
+        ax=ax[i, 1], vmin=0, cbar_kwargs={"label": "Freq. [%]"}, rasterized=True
+    )
+
+ax.format(
+    coast=True,
+    lonlim=LON_SLICE,
+    latlim=LAT_SLICE,
+    rowlabels=["Mundhenk_v3", "GuanWaliser_v2", "TempestLR", "Reid500"],
+    collabels=["0.25°", "2°"],
+)
+```
+
+```{python}
+fig.savefig("../../figures/ar_freq_reso_eval.pdf")
+```
+
