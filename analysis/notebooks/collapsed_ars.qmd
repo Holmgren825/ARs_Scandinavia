@@ -487,7 +487,8 @@ How many AR time steps do we get during the average year?
 
 ```{python}
 ar_ann_avg_frq = (
-    (ar_ens_ds.groupby(["ardt", "start_time.year"]).sum() / n_days.values).mean("year")
+    (ar_ens_ds.groupby(["ardt", "start_time.year"]).sum() / n_days.values)
+    .mean("year")
     # .median("ardt")
     .load()
 )
@@ -935,7 +936,9 @@ for i in range(4):
     res.append([ardt, corr.statistic, corr.pvalue])
 
 corr_df = pd.DataFrame(res, columns=["ardt", "r2", "p-val"])
-corr_df.to_csv("/data/projects/atmo_rivers_scandinavia/ann_ar_avg_pr_max_correlations.csv")
+corr_df.to_csv(
+    "/data/projects/atmo_rivers_scandinavia/ann_ar_avg_pr_max_correlations.csv"
+)
 corr_df
 ```
 
@@ -947,7 +950,9 @@ for i in range(4):
     res.append([ardt, corr.statistic, corr.pvalue])
 
 corr_df = pd.DataFrame(res, columns=["ardt", "r2", "p-val"])
-corr_df.to_csv("/data/projects/atmo_rivers_scandinavia/ann_ar_max_pr_max_correlations.csv")
+corr_df.to_csv(
+    "/data/projects/atmo_rivers_scandinavia/ann_ar_max_pr_max_correlations.csv"
+)
 corr_df
 ```
 
@@ -955,7 +960,9 @@ corr_df
 res = []
 for i in range(4):
     ardt = ar_trend_max.isel(ardt=i).ardt.values
-    corr = sc_stats.pearsonr(ar_trend_max.isel(ardt=i).values, ann_precip_max.isel(ardt=i).values)
+    corr = sc_stats.pearsonr(
+        ar_trend_max.isel(ardt=i).values, ann_precip_max.isel(ardt=i).values
+    )
     res.append([ardt, corr.statistic, corr.pvalue])
 ```
 
@@ -1065,7 +1072,9 @@ ann_tp_field = precip_ds.groupby("valid_time.year").sum().tp.compute()
 ```
 
 ```{python}
-ann_ar_ens_field = ar_ens_ds.groupby(["start_time.year", "ardt"]).sum().ar_tracked_id.compute()
+ann_ar_ens_field = (
+    ar_ens_ds.groupby(["start_time.year", "ardt"]).sum().ar_tracked_id.compute()
+)
 ```
 
 ```{python}
@@ -1077,17 +1086,27 @@ n_ardts = 4
 spatial_correlations = np.zeros((n_years, n_ardts))
 for year in range(n_years):
     for ardt_idx in range(n_ardts):
-        spatial_correlations[year, ardt_idx] = compute_spatial_correltion(ann_ar_ens_field.isel(ardt=ardt_idx, year=year), ann_tp_field.isel(year=year) )
+        spatial_correlations[year, ardt_idx] = compute_spatial_correltion(
+            ann_ar_ens_field.isel(ardt=ardt_idx, year=year),
+            ann_tp_field.isel(year=year),
+        )
 ```
 
 ```{python}
 fig, ax = plt.subplots()
 ax.plot(ann_tp_field.year, spatial_correlations.mean(axis=1))
-ax.fill_between(ann_tp_field.year, spatial_correlations.min(axis=1), spatial_correlations.max(axis=1), alpha=0.7)
+ax.fill_between(
+    ann_tp_field.year,
+    spatial_correlations.min(axis=1),
+    spatial_correlations.max(axis=1),
+    alpha=0.7,
+)
 ```
 
 ```{python}
-ann_ar_ens_field_norm = ann_ar_ens_field / (ann_ar_ens_field.max() - ann_ar_ens_field.min())
+ann_ar_ens_field_norm = ann_ar_ens_field / (
+    ann_ar_ens_field.max() - ann_ar_ens_field.min()
+)
 ann_tp_field_norm = ann_tp_field / (ann_tp_field.max() - ann_tp_field.min())
 ```
 
@@ -1168,10 +1187,16 @@ n_bins = 15
 Histograms for the spatial average.
 
 ```{python}
-hist_ar, bins = np.histogram(
-    ar_precip_hist.tp.data, range=hist_bin_range, bins=n_bins, density=True
-)
-# hist_ar = hist_ar.compute()
+hist_ar = np.zeros((4, 15))
+for i, ardt in enumerate(ARDT_NAMES):
+    indices = ar_precip_hist.tp.groupby("ardt").groups[ardt]
+    hist, _ = np.histogram(
+        ar_precip_hist.isel(valid_time=indices).tp.data,
+        range=hist_bin_range,
+        bins=n_bins,
+        density=True,
+    )
+    hist_ar[i] = hist
 ```
 
 ```{python}
@@ -1184,10 +1209,16 @@ hist_n_ar, bins = np.histogram(
 Histograms for the 75th percentile.
 
 ```{python}
-qtile_hist_ar, bins = np.histogram(
-    ar_precip_hist_max.tp.data, range=hist_bin_range, bins=n_bins, density=True
-)
-# qtile_hist_ar = qtile_hist_ar.compute()
+qtile_hist_ar = np.zeros((4, 15))
+for i, ardt in enumerate(ARDT_NAMES):
+    indices = ar_precip_hist_max.tp.groupby("ardt").groups[ardt]
+    hist, _ = np.histogram(
+        ar_precip_hist_max.isel(valid_time=indices).tp.data,
+        range=hist_bin_range,
+        bins=n_bins,
+        density=True,
+    )
+    qtile_hist_ar[i] = hist
 ```
 
 ```{python}
@@ -1207,6 +1238,7 @@ n_ar_avg_pr_ts = n_ar_precip_ens_nz.cf.mean("time").compute() / 6
 ```
 
 ```{python}
+#| jupyter: {outputs_hidden: true, source_hidden: true}
 fig, axs = plt.subplots(
     figwidth="8.3cm",
     # figheight="12cm",
@@ -1280,11 +1312,92 @@ axs.format(
 fig.savefig("../../figures/avg_precip_timestep_ar_ens.svg")
 ```
 
-What is the difference between the average AR rain rate and the non-AR rain rate?
+New figure with histograms only.
 
 ```{python}
-ar_med.tp.mean() / n_ar_med.tp.mean()
+ens_min
 ```
+
+```{python}
+fig, ax = plt.subplots(
+    figwidth="8.3cm",
+    # figheight="12cm",
+    abc=True,
+)
+
+qtile = 1  # 0.975
+
+
+# ax.stairs(np.max(hist_ar, axis=0), bins, color="C0", fill=True, alpha=0.5, zorder=0)
+# ax.fill_between(
+#    bins[1:],
+#    np.min(hist_ar, axis=0),
+#    np.max(hist_ar, axis=0),
+#    color="C0",
+#    step="pre",
+#    alpha=0.2,
+# )
+ens_min = np.min(hist_ar, axis=0)
+ens_min = np.concat([ens_min[:1], ens_min])
+
+ens_max = np.max(qtile_hist_ar, axis=0)
+ens_max = np.concat([ens_max[:1], ens_max])
+
+ens_med = np.median(hist_ar, axis=0)
+ens_med_pad = np.concat([ens_med[:1], ens_med])
+
+ax.fill_between(
+    bins,
+    ens_min,
+    np.where(ens_max > ens_med_pad, ens_max, ens_med_pad),
+    color="C0",
+    step="pre",
+    alpha=0.2,
+)
+
+ax.stairs(ens_med, bins, label="AR [Avg.]", color="C0")
+# ax.stairs(
+#    np.median(qtile_hist_ar, axis=0), bins, label="AR [3rd qtile]", color="C0", ls="--"
+# )
+#
+## Non AR conditions.
+ax.stairs(hist_n_ar, bins, label="No AR [Avg.]", color="C1")
+
+ax.fill_between(
+    bins,
+    np.concat([hist_n_ar[:1], hist_n_ar]),
+    np.concat([qtile_hist_n_ar[:1], qtile_hist_n_ar]),
+    color="C1",
+    step="pre",
+    alpha=0.2,
+)
+
+ax.format(
+    yscale="log",
+    xlabel="Precipitation [mm/h]",
+    ylabel="Density",
+    ytickloc="l",
+    ylabelloc="l",
+    title="Histogram of 1 hour precipitation",
+)
+fig.legend(loc="b", ncols=3)
+
+# Remove titles on maps.
+ax.format(title="")
+ax.format(
+    # title="",
+    suptitle="Average hourly precipitation\n[Ensemble full range]",
+    abcloc="ul",
+    abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
+)
+```
+
+```{python}
+fig.savefig("../../figures/ar_timestep_hist.svg")
+```
+
+What is the difference between the average AR rain rate and the non-AR rain rate?
 
 ### Tests
 
@@ -1391,9 +1504,7 @@ ar_precip_ens = ar_precip_ens.assign_coords({"label": ar_ts_ens})
 ```{python}
 # NOTE: Need to divide by 4 since we have 4 ARDTs?
 ar_precip_ens_avg = (
-    ar_precip_ens.groupby(["label", "ardt", "valid_time.year"])
-    .sum()
-    .mean("year")
+    ar_precip_ens.groupby(["label", "ardt", "valid_time.year"]).sum().mean("year")
     # .median("ardt")
 ).load()
 ar_precip_ens_avg_ts = ar_precip_ens.groupby(["label"]).mean().load()
@@ -1406,7 +1517,7 @@ n_days_groups = n_days.values.reshape((1, 1, -1, 1, 1))
 ```{python}
 grouped_ars = (
     (
-        (ar_ens_ds.groupby(["start_time.year", "label", "ardt"]).sum() / n_days_groups)
+        ar_ens_ds.groupby(["start_time.year", "label", "ardt"]).sum() / n_days_groups
     ).mean(["year"])
     # .median("ardt")
 )
