@@ -1804,10 +1804,6 @@ test = test.ar_tracked_id / n_samples_per_day
 ```
 
 ```{python}
-(test.sum(["lat", "lon"]) / n_gridpoints).max()
-```
-
-```{python}
 weights = np.cos(np.deg2rad(ar_ens_ds.lat))
 group_ar_cycle = (
     (
@@ -1835,7 +1831,7 @@ data = data.assign_coords({"dayofyear": dates}) * 100  # / n_gridpoints * 100
 ```
 
 ```{python}
-fig, ax = plt.subplots(nrows=4, figwidth="8.5cm", figheight="12cm")
+fig, ax = plt.subplots(nrows=4, figwidth="8.5cm", figheight="12cm", abc=True)
 win_size = 10
 # Isn't this just spatial mean?
 for i in range(4):
@@ -1886,6 +1882,9 @@ ax.format(
     xformatter="%b",
     xrotation=0,
     ymin=0,
+    abcloc="ul",
+    abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
 )
 ```
 
@@ -2021,7 +2020,6 @@ season_samples
 ```
 
 Pre-compute the frequencies.
-
 
 ```{python}
 freqs = season_grouped_ars * 100
@@ -2315,4 +2313,3 @@ fig = nao_cluster_plot(freqs.min("ardt"), "NAO-grouped AR frequencies [Ensemble 
 ```{python}
 fig.savefig("../../figures/nao_ar_clusters_ens_min.svg")
 ```
-
