@@ -559,7 +559,7 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
         lonlim=LON_SLICE,
         latlim=LAT_SLICE,
         title="",
-        rowlabels=["AR frequency", "Total AR precip.", "AR precip. fraction"],
+        rowlabels=["AR frequency", "Total AR precipitation", "AR precipitation fraction"],
         suptitle=suptitle,
         abcloc="ul",
         abcbbox=True,
@@ -572,7 +572,7 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
 fig = annual_average_plot(
     ar_ann_avg_frq.median("ardt"),
     ar_ann_avg_pr.median("ardt"),
-    "Annual average precipitation\nduring ARs [Ensemble med.]",
+    "Annual average precipitation\nduring ARs [Ensemble median]",
     ann_avg_precip_ds,
 )
 ```
