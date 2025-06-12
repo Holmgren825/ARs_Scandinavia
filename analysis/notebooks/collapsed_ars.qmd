@@ -1553,7 +1553,7 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
 fig = ar_cluster_plot(
     grouped_ars.median("ardt"),
     ar_precip_ens_avg.median("ardt"),
-    "AR clusters [Ensemble med.]",
+    "AR clusters [Ensemble median]",
 )
 ```
 
@@ -1652,7 +1652,7 @@ fig.savefig("../../figures/ann_avg_ar_pr_clusters_ens_max.svg")
 fig = ar_cluster_plot(
     grouped_ars.min("ardt"),
     ar_precip_ens_avg.min("ardt"),
-    "AR clusters [Ensemble min.]",
+    "AR clusters [Ensemble min]",
 )
 ```
 
@@ -1984,25 +1984,44 @@ ar_ens_ds = ar_ens_ds.load()
 ```
 
 ```{python}
+n_days_season = precip_ds.valid_time.groupby(["valid_time.year", "valid_time.season"]).count()
+```
+
+```{python}
 ann_avg = (ar_ens_ds.groupby(["start_time.year", "label", "ardt"]).sum() / n_days).mean(
     "year"
 )
 ```
 
 ```{python}
+n_days_season.shape
+```
+
+```{python}
 season_grouped_ars = (
     (
         ar_ens_ds.groupby(["start_time.season", "start_time.year", "label", "ardt"])
-        # ar_ens_ds.groupby(["start_time.season", "start_time.year", "label"])
         .sum()
-        / n_days.values.reshape((1, -1, 1, 1))
-    ).mean("year")
+    )#.mean("year")
     # .median("ardt")
 )
 ```
 
 ```{python}
 season_grouped_ars = season_grouped_ars.isel(season=slice(0, -1))
+```
+
+```{python}
+n_seasons = season_grouped_ars.season.shape[0]
+n_years = season_grouped_ars.year.shape[0]
+```
+
+Uses broadcasting to compute frequencies per season.
+`n_days_season` is the number of days in each season in each year.
+
+```{python}
+season_grouped_ars = season_grouped_ars / n_days_season.T.values.reshape(1, 1, n_seasons, n_years, 1, 1)
+season_grouped_ars = season_grouped_ars.mean("year")
 ```
 
 Get the number of samples for each season, on average.
@@ -2088,7 +2107,7 @@ def season_cluster_plot(freqs, suptitle):
 
 ```{python}
 fig = season_cluster_plot(
-    freqs.median("ardt"), "Seasonal AR frequencies [Ensemble med.]"
+    freqs.median("ardt"), "Seasonal AR frequencies [Ensemble median]"
 )
 ```
 
