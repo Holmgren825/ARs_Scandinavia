@@ -392,6 +392,17 @@ n_ar_precip_ens.tp.attrs["units"] = "mm"
 ar_precip_ens.tp.attrs["units"] = "mm"
 ```
 
+Remove the average non-AR precip from the AR precip.
+
+```{python}
+n_ar_precip_avg_ts = n_ar_precip_ens.mean("valid_time")
+```
+
+```{python}
+ar_precip_ens = ar_precip_ens - n_ar_precip_avg_ts
+ar_precip_ens = ar_precip_ens.where(ar_precip_ens > 0, 0)
+```
+
 Remove duplicate time steps.
 
 ```{python}
@@ -747,34 +758,44 @@ import pymannkendall as mk
 mk_res_avg = []
 for ardt_data in ar_trend.values.T:
     results = mk.original_test(ardt_data)
-    mk_res_avg.append(results.p)
+    mk_res_avg.append([results.p, results.slope])
 mk_res_ext = []
 for ardt_data in ar_trend_max.values.T:
     results = mk.original_test(ardt_data)
-    mk_res_ext.append(results.p)
+    mk_res_ext.append([results.p, results.slope])
+```
+
+```{python}
+mk_res_avg
+```
+
+```{python}
+mk_res_ext
 ```
 
 ```{python}
 weights = np.cos(np.deg2rad(precip_ds.latitude))
-ann_precip = (
+ann_ar_precip = (
     ar_precip_ens.cf.groupby(["time.year", "ardt"])
     .sum()
+    .tp.compute()
     .weighted(weights)
     .mean(["latitude", "longitude"])
     # .median("ardt")
-    .tp.compute()
     / 1e3
 )
-ann_precip_max = (
+ann_ar_precip_max = (
     ar_precip_ens.cf.groupby(["time.year", "ardt"])
     .sum()
+    .tp.compute()
     .weighted(weights)
     .quantile(0.99, dim=["latitude", "longitude"])
     # .median("ardt")
-    .tp.compute()
     / 1e3
 )
 ```
+
+#### Initial trend plot
 
 ```{python}
 grid_spec = [[1, 2], [3, 3]]
@@ -829,23 +850,23 @@ ax.format(
 fig.savefig("../../figures/ar_ann_avg_trends.svg")
 ```
 
-Alternative trends plot.
+#### Alternative trends plot.
 
 ```{python}
 weights = np.cos(np.deg2rad(precip_ds.latitude))
-ann_tp = (
+ann_precip = (
     precip_ds.groupby("valid_time.year")
     .sum()
+    .tp.compute()
     .weighted(weights)
     .mean(["latitude", "longitude"])
-    .tp.compute()
 )
-ann_tp_max = (
+ann_precip_max = (
     precip_ds.groupby("valid_time.year")
     .sum()
+    .tp.compute()
     .weighted(weights)
     .quantile(0.99, dim=["latitude", "longitude"])
-    .tp.compute()
 )
 ```
 
@@ -853,11 +874,13 @@ ann_tp_max = (
 import scipy.stats as sc_stats
 ```
 
+Correlation between AR freq. and total annual precip.
+
 ```{python}
 res = []
 for i in range(4):
     ardt = ar_trend.isel(ardt=i).ardt.values
-    corr = sc_stats.pearsonr(ar_trend.isel(ardt=i).values, ann_tp_max.values)
+    corr = sc_stats.pearsonr(ar_trend.isel(ardt=i).values, ann_precip_max.values)
     res.append([ardt, corr.statistic, corr.pvalue])
 
 corr_df = pd.DataFrame(res, columns=["ardt", "r2", "p-val"])
@@ -871,7 +894,7 @@ corr_df
 res = []
 for i in range(4):
     ardt = ar_trend_max.isel(ardt=i).ardt.values
-    corr = sc_stats.pearsonr(ar_trend_max.isel(ardt=i).values, ann_tp_max.values)
+    corr = sc_stats.pearsonr(ar_trend_max.isel(ardt=i).values, ann_precip_max.values)
     res.append([ardt, corr.statistic, corr.pvalue])
 
 corr_df = pd.DataFrame(res, columns=["ardt", "r2", "p-val"])
@@ -881,12 +904,14 @@ corr_df.to_csv(
 corr_df
 ```
 
+Correlation between AR freq and AR precip.
+
 ```{python}
 res = []
 for i in range(4):
     ardt = ar_trend_max.isel(ardt=i).ardt.values
     corr = sc_stats.pearsonr(
-        ar_trend_max.isel(ardt=i).values, ann_precip_max.isel(ardt=i).values
+        ar_trend_max.isel(ardt=i).values, ann_ar_precip.isel(ardt=i).values
     )
     res.append([ardt, corr.statistic, corr.pvalue])
 ```
@@ -897,8 +922,57 @@ corr_df
 ```
 
 ```{python}
+res = []
+for i in range(4):
+    ardt = ar_trend_max.isel(ardt=i).ardt.values
+    corr = sc_stats.pearsonr(
+        ar_trend_max.isel(ardt=i).values, ann_ar_precip_max.isel(ardt=i).values
+    )
+    res.append([ardt, corr.statistic, corr.pvalue])
+```
+
+```{python}
+corr_df = pd.DataFrame(res, columns=["ardt", "r2", "p-val"])
+corr_df
+```
+
+Correlation between AR precip and total precip.
+
+```{python}
+res = []
+for i in range(4):
+    ardt = ar_trend_max.isel(ardt=i).ardt.values
+    corr = sc_stats.pearsonr(
+        ann_precip.values, ann_ar_precip_max.isel(ardt=i).values
+    )
+    res.append([ardt, corr.statistic, corr.pvalue])
+```
+
+```{python}
+corr_df = pd.DataFrame(res, columns=["ardt", "r2", "p-val"])
+corr_df
+```
+
+```{python}
+res = []
+for i in range(4):
+    ardt = ar_trend_max.isel(ardt=i).ardt.values
+    corr = sc_stats.pearsonr(
+        ann_precip_max.values, ann_ar_precip_max.isel(ardt=i).values
+    )
+    res.append([ardt, corr.statistic, corr.pvalue])
+```
+
+```{python}
+corr_df = pd.DataFrame(res, columns=["ardt", "r2", "p-val"])
+corr_df
+```
+
+Figure.
+
+```{python}
 fig, ax = plt.subplots(nrows=4, figwidth="12cm", figheight="13cm", abc=True)
-bar_ax = ax.alty()
+bar_ax = ax.alty(color="C0")
 
 bar_colors = plt.get_colors("tab20c")[:4]
 for i in range(4):
@@ -909,29 +983,28 @@ for i in range(4):
         ax=ax[i], zorder=5, c="C1", ls="--", label="AR spatial P$_{99}$", lw=1.3
     )
 
-    annotation = f"{ar_trend.isel(ardt=i).ardt.values}, p-val$_{{avg}}$: {mk_res_avg[i]:.2f}, p-val$_{{P_{{99}}}}$: {mk_res_ext[i]:.2f}"
-    # ax[i].annotate(annotation, (0, 0))
+    annotation = f"{ar_trend.isel(ardt=i).ardt.values}"
     ax[i].format(title=annotation)
 
     bar_ax[i].bar(
-        ann_tp.year,
-        ann_tp_max.values,
-        label="TP spatial P$_{99}$",
-        c=bar_colors[2],
-    )
-    bar_ax[i].bar(
         ann_precip.year,
-        ann_precip_max.isel(ardt=i).values,
-        label="AR TP spatial P$_{99}$",
+        ann_precip_max.values,
+        label="TP spatial P$_{99}$",
         c=bar_colors[1],
     )
-
     bar_ax[i].bar(
         ann_precip.year,
-        ann_precip.isel(ardt=i).values,
-        label="AR TP spatial avg.",
+        ann_ar_precip_max.isel(ardt=i).values,
+        label="AR TP spatial P$_{99}$",
         c=bar_colors[0],
     )
+
+    # bar_ax[i].bar(
+    #     ann_precip.year,
+    #     ann_precip.isel(ardt=i).values,
+    #     label="AR TP spatial avg.",
+    #     c=bar_colors[0],
+    # )
 
 handles, labels = ax[-1].get_legend_handles_labels()
 bar_handles, bar_labels = bar_ax[-1].get_legend_handles_labels()
@@ -939,22 +1012,24 @@ bar_handles, bar_labels = bar_ax[-1].get_legend_handles_labels()
 handles.extend(bar_handles)
 labels.extend(bar_labels)
 
-fig.legend(handles, labels, loc="b", ncols=3)
+fig.legend(handles, labels, loc="b", ncols=2)
 # bar_ax.format(ylabel="AR Total Precipitation [m]")
 fig.text(
     0.985,
     0.55,
-    "AR Total Precipitation [m]",
+    "Total Precipitation [m]",
     va="center",
     ha="center",
     rotation="vertical",
     in_layout=True,
+    color="C0"
 )
 bar_ax[2].format(
     ylabel=" ",
 )
 
 ax.format(
+    #color="C1",
     suptitle="Annual AR frequency and total precipitation",
     xlabel="Year",
     ylabel="AR Frequency [%]",
