@@ -2307,7 +2307,7 @@ def nao_cluster_plot(freqs, suptitle):
 
 ```{python}
 fig = nao_cluster_plot(
-    freqs.median("ardt"), "NAO-grouped AR frequencies [Ensemble med.]"
+    freqs.median("ardt"), "NAO-grouped AR frequencies [Ensemble median]"
 )
 ```
 
@@ -2326,9 +2326,10 @@ fig.savefig("../../figures/nao_ar_clusters_ens_max.svg")
 ```
 
 ```{python}
-fig = nao_cluster_plot(freqs.min("ardt"), "NAO-grouped AR frequencies [Ensemble min.]")
+fig = nao_cluster_plot(freqs.min("ardt"), "NAO-grouped AR frequencies [Ensemble min]")
 ```
 
 ```{python}
 fig.savefig("../../figures/nao_ar_clusters_ens_min.svg")
 ```
+
