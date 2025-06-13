@@ -1864,97 +1864,74 @@ fig.savefig("../../figures/ar_ann_avg_trends_per_cluster_v2.svg")
 ```
 
 ### Cluster seasonal cycles
-This will be the average number of AR pixels? Or just absolute.
+We group by month, sum the AR occurrences, and then divide by the number of time steps in each month.
+No yearly grouping.
 
 ```{python}
-n_samples_per_day = precip_ds.valid_time.groupby("valid_time.dayofyear").count()
-```
-
-```{python}
-test = ar_ens_ds.groupby(["start_time.dayofyear", "label", "ardt"]).sum().compute()
-```
-
-```{python}
-test = test.ar_tracked_id / n_samples_per_day
+n_ts_per_month = precip_ds.valid_time.groupby("valid_time.month").count()
 ```
 
 ```{python}
 weights = np.cos(np.deg2rad(ar_ens_ds.lat))
 group_ar_cycle = (
-    (
-        ar_ens_ds.groupby(["start_time.dayofyear", "label", "ardt"]).sum()
-        / n_samples_per_day
-    )
-    # .weighted(weights)
-    # .mean(["lat", "lon"])
+    (ar_ens_ds.groupby(["start_time.month", "label", "ardt"]).sum())
+    / n_ts_per_month
 ).compute()
 ```
 
+Compute the weighted spatial 75th percentile.
+
 ```{python}
-n_gridpoints = ar_ens_ds.lat.shape[0] * ar_ens_ds.lon.shape[0]
+data = (
+    (group_ar_cycle).weighted(weights).quantile(0.75, dim=["lat", "lon"])
+)
 ```
 
 ```{python}
-from matplotlib.dates import MonthLocator
+data = data.roll({"month": 1}, roll_coords=False) * 100
 ```
 
 ```{python}
-data = (group_ar_cycle).weighted(weights).quantile(0.75, dim=["lat", "lon"])
-
-dates = pd.to_datetime(data.dayofyear.values, format="%j")
-data = data.assign_coords({"dayofyear": dates}) * 100  # / n_gridpoints * 100
-```
-
-```{python}
+n_clusters = 4
 fig, ax = plt.subplots(nrows=4, figwidth="8.5cm", figheight="12cm", abc=True)
 win_size = 10
 # Isn't this just spatial mean?
 for i in range(4):
-    (
-        data.isel(label=i)
-        .rolling(dayofyear=win_size, min_periods=1, center=True)
-        .mean()
-        .median("ardt")
-        .ar_tracked_id
-    ).plot(ax=ax[i], label="Ensemble Med.", lw=1)
-    (
-        data.isel(label=i)
-        .rolling(dayofyear=60, min_periods=1, center=True)
-        .mean()
-        .median("ardt")
-        .ar_tracked_id
-    ).plot(ax=ax[i], label="60-day window", lw=1, ls="--")
-
-    cycle_max = (
-        data.isel(label=i)
-        .rolling(dayofyear=win_size, min_periods=1, center=True)
-        .mean()
-        .max("ardt")
-        .ar_tracked_id
+    (data.isel(label=i).median("ardt").ar_tracked_id).plot(
+        ax=ax[i], label="Ensemble Median", lw=1
     )
-
-    cycle_min = (
-        data.isel(label=i)
-        .rolling(dayofyear=win_size, min_periods=1, center=True)
-        .mean()
-        .min("ardt")
-        .ar_tracked_id
-    )
+    cycle_max = data.isel(label=i).max("ardt").ar_tracked_id
+    cycle_min = data.isel(label=i).min("ardt").ar_tracked_id
     ax[i].fill_between(
-        cycle_min.dayofyear, cycle_min, cycle_max, alpha=0.5, label="Ensemble Min - Max"
+        cycle_min.month, cycle_min, cycle_max, alpha=0.5, label="Ensemble Min - Max"
     )
 
 handles, labels = ax[i].get_legend_handles_labels()
 fig.legend(handles, labels, loc="b", ncols=2)
+months = [
+    "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+]
 ax.format(
     title="",
     xlabel="Month",
     ylabel="Spatial P$_{75}$ AR probability [%]",
     rowlabels=[f"Cluster {i}" for i in range(1, n_clusters + 1)],
     suptitle="Average AR seasonal cycle",
-    xlocator=MonthLocator(bymonth=range(1, 13)),
-    xtickminor=False,
-    xformatter="%b",
+    xlocator=range(1, 13),
+    # xtickminor=False,
+    xticklabels=months,
+    # xformatter="%b",
     xrotation=0,
     ymin=0,
     abcloc="ul",
