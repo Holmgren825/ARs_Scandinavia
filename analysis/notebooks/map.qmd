@@ -74,18 +74,23 @@ un_smoothing = -0.15
 join_style = "round"  # round, mitre, bevel
 
 fig, ax = plt.subplots(
-    figwidth="10cm",
+    figwidth="8.5cm",
     proj="lcc",
     proj_kw={"central_longitude": 15},
 )
+# gpd.GeoSeries(
+#     shape
+# ).boundary.plot(ax=ax, color="C1", zorder=5, lw=1, transform=ccrs.PlateCarree(), label="Scandinavia")
 
 gpd.GeoSeries(
     shape.buffer(smoothing, join_style=join_style).buffer(
         un_smoothing, join_style=join_style
     )
-).plot(ax=ax[0], color="C1", alpha=0.7, zorder=5, transform=ccrs.PlateCarree())
+).boundary.plot(ax=ax, color="C1", zorder=5, transform=ccrs.PlateCarree(), label="Smoothed region")
 
+ax.legend(loc="ul", ncols=1)
 ax.format(
+    suptitle="Scandinavia and smoothed study region",
     coast=True,
     reso="hi",
     land=True,
@@ -93,8 +98,8 @@ ax.format(
     facecolor="ocean blue",
     latlabels=True,
     lonlabels=True,
-    lonlim=LON_SLICE,
-    latlim=LAT_SLICE,
+    lonlim=(0, 32),
+    latlim=(52, 72),
     title="",
 )
 ```
@@ -102,4 +107,3 @@ ax.format(
 ```{python}
 fig.savefig("../../figures/scandi_map.svg")
 ```
-
