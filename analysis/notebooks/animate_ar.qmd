@@ -30,7 +30,7 @@ import cf_xarray
 import dask.array as da
 import numpy as np
 import pandas as pd
-import proplot as pplt
+import ultraplot as plt
 import scipy
 import xarray as xr
 from ar_identify.metrics import spatial_jaccard_score
@@ -73,14 +73,18 @@ At this points, we don't really need to care about the ensemble members, we can 
 - But we can remove the time coordinate for now, but it would be nice to keep the groupby functionality.
 
 ```{python}
-ardt_name = ARDT_NAMES[0]
+ardt_name = ARDT_NAMES[2]
 ar_path = os.path.join(
     BASE_PATH,
     f"ERA5.{ardt_name}",
-    f"ERA5.{ardt_name}.scand_ars.collapsed.1980-2019.zarr",
+    "ERA5.ar_id.GuanWaliser_v2.6hr.scand_ars.tracked.19790101-20191231.zarr"
 )
 ar_ds = xr.open_zarr(ar_path)
 ar_ds = subsel_ds(ar_ds, LAT_SLICE, LON_SLICE)
+```
+
+```{python}
+ar_ds.sel(time="1980-09-02T1").ar_tracked_id.plot()
 ```
 
 ```{python}
@@ -110,43 +114,44 @@ from matplotlib import animation
 ```
 
 ```{python}
-ivt_animate = ivt_ds.sel(time="1982-07")
+#ivt_animate = ivt_ds.sel(time="1982-07")
+ivt_animate = ar_ds.sel(time=slice("1980-09", "1980-10")) > 0
+ivt_animate = ivt_animate.where(ivt_animate > 0, np.nan)
 ```
 
 ```{python}
-pplt.rc["figure.facecolor"] = "#191919"
-pplt.rc["axes.edgecolor"] = "white"
-pplt.rc["label.color"] = "white"
-pplt.rc["title.color"] = "white"
-pplt.rc["tick.labelcolor"] = "white"
+ivt_animate = ivt_animate.load()
 ```
 
 ```{python}
-fig, ax = pplt.subplots(
+n_steps = ivt_animate.time.shape[0]
+fig, ax = plt.subplots(
     figwidth="1200px",
-    proj="moll",
+    proj="lcc",
+    proj_kw={"central_longitude": 15},
 )
-ax.format(coast=True, reso="med", latlim=(0, 90), facecolor="black")
+ax.format(coast=True, reso="med", latlim=(50, 72), lonlim=(0, 32))
 
-cm = ivt_animate.isel(time=0).ivt.plot.pcolormesh(
+cm = ivt_animate.isel(time=0).ar_tracked_id.plot.pcolormesh(
     ax=ax,
-    vmin=0,
-    vmax=700,
-    levels=40,
-    cbar_kwargs={"label": "IVT [kg m$^{-1}$ s$^{-1}$]"},
+    #vmax=700,
+    #levels=40,
+    #cbar_kwargs={"label": "IVT [kg m$^{-1}$ s$^{-1}$]"},
+    add_colorbar=False
 )
 
 
 def update(frame):
     # Update colormesh
-    cm.set_array(ivt_animate.ivt.isel(time=frame).values.ravel())
+    cm.set_array(ivt_animate.ar_tracked_id.isel(time=frame).values.ravel())
 
-    date = str(ivt_animate.ivt.isel(time=frame).time.values)[:16]
+    date = str(ivt_animate.ar_tracked_id.isel(time=frame).time.values)[:16]
+    
     ax.format(title=f"time = {date}")
     return cm
 
 
-frames = range(124)
+frames = range(n_steps)
 ```
 
 ```{python}
@@ -154,7 +159,24 @@ anim = animation.FuncAnimation(
     fig, update, frames=frames, blit=False, interval=100, repeat=False
 )
 
-anim.save("ivt.mp4", writer="ffmpeg", dpi=300, savefig_kwargs={"facecolor": "#191919"})
+anim.save("ars.mp4", writer="ffmpeg", dpi=300)
+```
+
+
+```{python}
+test = ((ar_ds > 0).groupby("time.year").sum() / 1460).mean("year").load()
+```
+
+```{python}
+(ar_ds > 0).ar_tracked_id.any(["lat", "lon"]).sum().load()
+```
+
+```{python}
+_ / ar_ds.time.shape[0]
+```
+
+```{python}
+(test.ar_tracked_id*100).plot()
 ```
 
 ```{python}

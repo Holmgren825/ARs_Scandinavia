@@ -522,7 +522,6 @@ Get ensemble correlation spread
 
 ```{python}
 corr = corr.quantile([0, 0.5, 1])
-corr
 ```
 
 ```{python}
@@ -1063,6 +1062,124 @@ ar_trend_tot = (
     .ar_tracked_id
 )  # / n_days.values.reshape((-1, 1))
 ar_trend_tot = ar_trend_tot.compute()
+```
+
+### Trends in number of AR timesteps
+
+```{python}
+def get_unique(ds):
+    unique_shape = np.unique(ds).shape[0]
+    res = unique_shape / ds.shape[0]
+    return xr.DataArray(res)
+```
+
+```{python}
+unique = ar_ts_ens.valid_time.groupby("ardt").map(get_unique)
+```
+
+```{python}
+unique.to_pandas().median()
+```
+
+```{python}
+ar_ts_trend = ar_ts_ens.groupby(["valid_time.year", "ardt"]).count()# / n_days * 100
+```
+
+```{python}
+mk_res_avg = []
+for ardt_ts in ar_ts_trend.values.T:
+    results = mk.original_test(ardt_ts)
+    mk_res_avg.append([results.p, results.slope])
+```
+
+```{python}
+np.median(np.asarray(mk_res_avg), axis=0)
+```
+
+```{python}
+fig, ax = plt.subplots(figheight="6cm", figwidth="12cm")
+
+# for i in range(4):
+#     ar_ts_trend.isel(ardt=i).plot(ax=ax, label=ar_ts_trend.isel(ardt=i).ardt, zorder=5)
+ar_ts_trend.median("ardt").plot(ax=ax, label="ARDT median", c="k", lw=1, zorder=5)
+
+ar_ts_trend.min("ardt").plot(ax=ax, label="ARDT min-max", c="k", lw=1, ls="--", zorder=5, alpha=0.6)
+ar_ts_trend.max("ardt").plot(ax=ax, c="k", lw=1, ls="--", zorder=5, alpha=0.6)
+
+#ax.fill_between(ar_ts_trend.year, trend_min, trend_max, zorder=5, alpha=0.5)
+
+bar_ax = ax.twinx(color="C0", ylabel="Precipitation [m]")
+
+
+bar_ax.bar(
+    ann_precip.year,
+    ann_precip.values,
+    c=bar_colors[1],
+    label="Annual precipitation"
+)
+bar_ax.bar(
+    ann_precip.year,
+    ann_ar_precip.median("ardt").values,
+    c=bar_colors[0],
+    label="Annual AR precipitation"
+)
+ax.legend(loc="b", ncols=4)
+ax.format(
+    suptitle="Total annual AR occurrence and average annual precipitation over Scandinavia",
+    title="",
+    xlabel="Year",
+    ylabel="AR occurrence"
+)
+```
+
+```{python}
+fig.savefig("../../figures/ar_total_frq_tp.svg")
+```
+
+```{python}
+res = []
+for i in range(4):
+    ardt = ar_ts_trend.isel(ardt=i)
+    corr = sc_stats.pearsonr(
+        ann_precip.values, ardt.values
+    )
+    res.append([ardt.ardt.values, corr.statistic, corr.pvalue])
+```
+
+```{python}
+corr_df = pd.DataFrame(res, columns=["ardt", "r2", "p-val"])
+corr_df
+```
+
+```{python}
+corr_df[["r2", "p-val"]].median(axis=0)
+```
+
+```{python}
+corr_df.to_csv("/data/projects/atmo_rivers_scandinavia/ar_total_frq_corr.csv")
+```
+
+```{python}
+res = []
+for i in range(4):
+    ardt = ar_ts_trend.isel(ardt=i)
+    corr = sc_stats.pearsonr(
+        ann_ar_precip.isel(ardt=i).values, ardt.values
+    )
+    res.append([ardt.ardt.values, corr.statistic, corr.pvalue])
+```
+
+```{python}
+corr_df = pd.DataFrame(res, columns=["ardt", "r2", "p-val"])
+corr_df
+```
+
+```{python}
+corr_df[["r2", "p-val"]].median(axis=0)
+```
+
+```{python}
+corr_df.to_csv("/data/projects/atmo_rivers_scandinavia/ar_total_frq_corr_ar_tp.csv")
 ```
 
 ## Spatial correlation over time
