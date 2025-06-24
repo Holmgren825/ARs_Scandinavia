@@ -19,7 +19,7 @@ import os
 import cf_xarray
 import dask.array as da
 import numpy as np
-import proplot as pplt
+import ultraplot as plt
 import xarray as xr
 from ar_scandinavia.utils import subsel_ds
 from dask.distributed import Client
@@ -34,8 +34,8 @@ client = Client()
 ```
 
 ```{python}
-pplt.rc["font.size"] = 7
-pplt.rc["cmap.discrete"] = False
+plt.rc["font.size"] = 7
+#plt.rc["cmap.discrete"] = False
 ```
 
 ```{python}
@@ -83,10 +83,6 @@ def compute_cluster_scores(ds: xr.Dataset) -> list[list]:
     return res
 ```
 
-```{python}
-[i for i in range(2, 13)]
-```
-
 # Silhoutte
 
 ```{python}
@@ -106,18 +102,15 @@ for ardt_name in tqdm(ARDT_NAMES):
 ```
 
 ```{python}
-for i in range(5):
-    _, counts = np.unique_counts(res_d["GuanWaliser_v2"]["labels"][i].compute())
-    print(counts)
-    print(counts.sum())
-```
-
-```{python}
-n_clusters = MAX_CLUSTERS - MIN_CLUSTERS + 1
-fig, ax = pplt.subplots(nrows=n_clusters, ncols=4, sharex=False, sharey=False)
+local_min_clusters = 2
+local_max_clusters = 10
+n_clusters = local_max_clusters - local_min_clusters + 1
 
 for ardt_i, ardt_name in enumerate(ARDT_NAMES):
-    for cluster_i, curr_n_clusters in enumerate(range(MIN_CLUSTERS, MAX_CLUSTERS + 1)):
+    
+    fig, ax = plt.subplots(figwidth="12cm", nrows=3, ncols=3, sharex=True, sharey=True)
+    
+    for cluster_i, curr_n_clusters in enumerate(range(local_min_clusters, local_max_clusters + 1)):
         sample_silhouette_values = res_d[ardt_name]["silhouette_samples"][cluster_i]
         silhouette_avg = res_d[ardt_name]["silhouette_avg"][cluster_i]
         cluster_labels = res_d[ardt_name]["labels"][cluster_i]
@@ -135,7 +128,7 @@ for ardt_i, ardt_name in enumerate(ARDT_NAMES):
             y_upper = y_lower + size_cluster_i
 
             # color = cm.nipy_spectral(float(i) / n_clusters)
-            ax[cluster_i, ardt_i].fill_betweenx(
+            ax[cluster_i].fill_betweenx(
                 np.arange(y_lower, y_upper),
                 0,
                 ith_cluster_silhouette_values,
@@ -145,527 +138,24 @@ for ardt_i, ardt_name in enumerate(ARDT_NAMES):
             )
 
             # Label the silhouette plots with their cluster numbers at the middle
-            ax[cluster_i, ardt_i].text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
+            ax[cluster_i].text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
 
             # Compute the new y_lower for next plot
             y_lower = y_upper + 10  # 10 for the 0 samples
-        ax[cluster_i, ardt_i].axvline(x=silhouette_avg, ls="--", c="k", lw=1)
-        ax[cluster_i, ardt_i].format(ylim=[0, len(sample_silhouette_values) * 1.1])
-
-
-ax.format(
-    xlim=(-0.25, 1),
-    collabels=ARDT_NAMES,
-    rowlabels=list(range(MIN_CLUSTERS, MAX_CLUSTERS + 1)),
-    suptitle="Silhouette plot [Normal Res.]",
-)
-```
-
-```{python}
-fig.savefig("../../figures/n_cluster_eval_norm_res.svg")
-```
-
-```{python}
-fig, ax = pplt.subplots()
-
-for ardt_i, ardt_name in enumerate(ARDT_NAMES):
-    silhouette_avg = res_d[ardt_name]["silhouette_avg"]
-    ax.plot(range(MIN_CLUSTERS, MAX_CLUSTERS + 1), silhouette_avg, label=ardt_name)
-fig.legend(ncols=2, loc="b")
-ax.format(
-    xlabel="N. clusters", ylabel="Avg. Silhouette", suptitle="Elbow plot [Norm Res.]"
-)
-```
-
-```{python}
-fig.savefig("../../figures/n_cluster_eval_elbow_norm_res.svg")
-```
-
-```{python}
-test = res_d["GuanWaliser_v2"]["silhouette_samples"][5]
-```
-
-```{python}
-np.count_nonzero(test[test < 0])
-```
-
-```{python}
-n_clusters = MAX_CLUSTERS + 1 - MIN_CLUSTERS
-w_counts_arr = np.zeros((4, n_clusters))
-
-for ardt_i, ardt_name in enumerate(ARDT_NAMES):
-    for i in range(n_clusters):
-        sample_silhouette_values = res_d[ardt_name]["silhouette_samples"][i]
-        w_counts_arr[ardt_i, i] = (
-            np.count_nonzero(sample_silhouette_values[sample_silhouette_values < 0])
-            / sample_silhouette_values.shape[0]
-        )
-```
-
-```{python}
-fig, ax = pplt.subplots(nrows=2, sharey=False, figwidth="8.5cm")
-
-for ardt_i, ardt_name in enumerate(ARDT_NAMES):
-    silhouette_avg = res_d[ardt_name]["silhouette_avg"]
-    ax[0].plot(range(MIN_CLUSTERS, MAX_CLUSTERS + 1), silhouette_avg, label=ardt_name)
-
-    ax[1].plot(range(2, 2 + n_clusters), w_counts_arr[ardt_i] * 100)
-
-ax[0].legend(ncols=2)
-
-ax[0].format(
-    ylabel="Silhouette",
-)
-ax[1].format(ylabel="Missclassified samples [%]")
-ax.format(
-    xlabel="N. clusters",
-    suptitle="N. cluster evaluation",
-    xlim=(1.9, 12.1),
-)
-```
-
-# Other ways of clustering
-
-```{python}
-import cupy as cp
-from ar_identify.metrics import spatial_jaccard_score
-from scipy.stats import wasserstein_distance, wasserstein_distance_nd
-from skimage.metrics import structural_similarity as ssim
-from sklearn.cluster import HDBSCAN, AgglomerativeClustering
-from sklearn.cluster import KMeans as KMeans_sk
-from sklearn.metrics import pairwise_distances
-```
-
-```{python}
-ardt_name = ARDT_NAMES[2]
-print(ardt_name)
-ar_path = os.path.join(
-    BASE_PATH,
-    f"ERA5.{ardt_name}",
-    f"ERA5.{ardt_name}.scand_ars.collapsed.1980-2019.zarr",
-)
-ds = xr.open_zarr(ar_path)
-ds = subsel_ds(ds, LAT_SLICE, LON_SLICE)
-# ds = ds.coarsen(lat=4, lon=4, boundary="pad").max().load()
-```
-
-```{python}
-data = ds.ar_tracked_id.data
-# data = data.reshape(data.shape[0], -1)
-data[da.isnan(data)] = 0
-```
-
-```{python}
-data[data > 0] = 1
-```
-
-```{python}
-data = data.compute()
-```
-
-## HDBSCAN
-
-```{python}
-%%timeit
-wasserstein_distance_nd(data[0], data[100])
-```
-
-```{python}
-%%timeit
-wasserstein_distance(data[0].ravel(), data[100].ravel())
-```
-
-```{python}
-wasserstein_distance(data[0].ravel(), data[2].ravel())
-```
-
-```{python}
-wasserstein_distance_nd(data[0], data[2])
-```
-
-```{python}
-from cupyx.scipy.ndimage import distance_transform_edt
-```
-
-```{python}
-test = cp.asarray(data[:30])
-```
-
-```{python}
-test.shape
-```
-
-```{python}
-test_edt = distance_transform_edt(test, sampling=[1e6, 1, 1])
-```
-
-```{python}
-fig, ax = pplt.subplots(ncols=2)
-ax[0].imshow(test_edt[0].get())
-ax[1].imshow(test_edt[5].get())
-```
-
-```{python}
-weights = np.cos(np.deg2rad(ds.lat)).data.reshape((-1, 1))
-```
-
-```{python}
-%%timeit
-spatial_jaccard_score(data[0], data[100], weights=weights)
-```
-
-```{python}
-data = data[:500]
-```
-
-```{python}
-from multiprocessing import Pool
-```
-
-```{python}
-from functools import partial
-```
-
-```{python}
-dist_func = partial(wasserstein_distance_nd, data[0])
-```
-
-```{python}
-dist_func(data[3])
-```
-
-```{python}
-#| jupyter: {outputs_hidden: true}
-dist = np.zeros((data.shape[0], data.shape[0]))
-for i in tqdm(range(data.shape[0])):
-    dist_func = partial(wasserstein_distance_nd, data[i])
-    res = client.map(dist_func, data[i:])
-    res = client.gather(res)
-    res = np.asarray(res)
-    dist[i, i:] = res
-```
-
-```{python}
-dist = np.zeros((data.shape[0], data.shape[0]))
-for i in tqdm(range(data.shape[0])):
-    for j in range(i, data.shape[0]):
-        # dist[i, j] = spatial_jaccard_score(feat_0, feat_1, weights)
-        dist[i, j] = wasserstein_distance(data[i].ravel(), data[j].ravel())
-```
-
-```{python}
-fig, ax = pplt.subplots()
-ax.imshow(np.triu(dist) + np.triu(dist).T)
-```
-
-```{python}
-dist_mirror = np.triu(dist) + np.triu(dist).T
-```
-
-```{python}
-hdb = HDBSCAN(n_jobs=15, cluster_selection_epsilon=0.0, metric="precomputed")
-```
-
-```{python}
-hdb.fit(dist_mirror)
-# hdb.fit(data.reshape(data.shape[0], -1))
-```
-
-```{python}
-hdb_control = HDBSCAN(
-    n_jobs=15,
-    cluster_selection_epsilon=0.0,
-)
-```
-
-```{python}
-# hdb_control.fit(data.reshape(data.shape[0], -1))
-hdb_control.fit(test)
-```
-
-```{python}
-unique_labels, count_labels = np.unique_counts(hdb.labels_)
-count_labels
-```
-
-```{python}
-labels_control, counts = np.unique_counts(hdb_control.labels_)
-counts
-```
-
-```{python}
-labels = hdb.labels_
-labels_control = hdb_control.labels_
-```
-
-```{python}
-hdb_control.labels_
-```
-
-## AgglomerativeClustering
-
-```{python}
-def plot_silhouette_samples(labels, n_labels, silhouette_score_samples, ax):
-    y_lower = 10
-    for i in range(n_labels):
-        # Aggregate the silhouette scores for samples belonging to
-        # cluster i, and sort them
-        ith_cluster_silhouette_values = silhouette_score_samples[labels == i]
-
-        ith_cluster_silhouette_values.sort()
-
-        size_cluster_i = ith_cluster_silhouette_values.shape[0]
-        y_upper = y_lower + size_cluster_i
-
-        # color = cm.nipy_spectral(float(i) / n_clusters)
-        ax.fill_betweenx(
-            np.arange(y_lower, y_upper),
-            0,
-            ith_cluster_silhouette_values,
-            # facecolor=color,
-            # edgecolor=color,
-            alpha=0.7,
-        )
-
-        # Label the silhouette plots with their cluster numbers at the middle
-        ax.text(-0.05, y_lower + 0.5 * size_cluster_i, str(i))
-        y_lower = y_upper + 10  # 10 for the 0 samples
-```
-
-```{python}
-from sklearn.neighbors import kneighbors_graph
-```
-
-```{python}
-X = data.reshape(data.shape[0], -1)
-```
-
-```{python}
-connectivity = kneighbors_graph(X, n_neighbors=10, include_self=False, n_jobs=15)
-```
-
-```{python}
-n_clusters = 3
-model_ctrl = AgglomerativeClustering(
-    n_clusters=n_clusters,
-    linkage="ward",
-    # connectivity=connectivity,
-).fit(X)
-```
-
-```{python}
-model_conn = AgglomerativeClustering(
-    n_clusters=n_clusters,
-    connectivity=connectivity,
-    # metric="manhattan",
-    # linkage="average",
-).fit(X)
-```
-
-```{python}
-model_kmeans = KMeans_sk(
-    n_clusters=n_clusters,
-).fit(X)
-```
-
-```{python}
-labels_conn = model_conn.labels_
-labels_ctrl = model_ctrl.labels_
-labels_km = model_kmeans.labels_
-```
-
-```{python}
-test_ds = ds.isel(sample_id=slice(None, data.shape[0])).assign_coords(
-    {
-        "label": ("sample_id", labels_conn),
-        "label_ctrl": ("sample_id", labels_ctrl),
-        "label_km": ("sample_id", labels_km),
-    }
-)
-```
-
-```{python}
-test_ar = test_ds.groupby("label").sum().ar_tracked_id.load()
-test_ar_ctrl = test_ds.groupby("label_ctrl").sum().ar_tracked_id.load()
-test_ar_km = test_ds.groupby("label_km").sum().ar_tracked_id.load()
-```
-
-```{python}
-silhouette_score_samples_ctrl = silhouette_samples(
-    data.reshape(data.shape[0], -1), labels_ctrl
-)
-silhouette_scores_ctrl = silhouette_score(data.reshape(data.shape[0], -1), labels_ctrl)
-
-silhouette_score_samples_conn = silhouette_samples(
-    data.reshape(data.shape[0], -1), labels_conn
-)
-silhouette_scores_conn = silhouette_score(data.reshape(data.shape[0], -1), labels_conn)
-
-silhouette_score_samples_km = silhouette_samples(
-    data.reshape(data.shape[0], -1), labels_km
-)
-silhouette_scores_km = silhouette_score(data.reshape(data.shape[0], -1), labels_km)
-```
-
-```{python}
-n_labels = test_ar.label.shape[0]
-fig, ax = pplt.subplots(ncols=n_labels + 1, nrows=3, sharey=False, sharex=False)
-for i in range(n_labels):
-    test_ar.isel(label=i).plot(ax=ax[0, i])
-    test_ar_ctrl.isel(label_ctrl=i).plot(ax=ax[1, i])
-    test_ar_km.isel(label_km=i).plot(ax=ax[2, i])
-
-plot_silhouette_samples(labels_conn, n_labels, silhouette_score_samples_conn, ax[0, -1])
-ax[0, -1].axvline(x=silhouette_scores_conn, ls="--", c="k", lw=1)
-
-plot_silhouette_samples(labels_ctrl, n_labels, silhouette_score_samples_ctrl, ax[1, -1])
-ax[1, -1].axvline(x=silhouette_scores_ctrl, ls="--", c="k", lw=1)
-
-plot_silhouette_samples(labels_km, n_labels, silhouette_score_samples_km, ax[2, -1])
-ax[2, -1].axvline(x=silhouette_scores_km, ls="--", c="k", lw=1)
-
-ax[0, -1].format(xlim=(-0.3, 0.5))
-ax[1, -1].format(xlim=(-0.3, 0.5))
-ax.format(
-    suptitle=f"Clustering [n={test_ds.sample_id.shape[0]}]",
-    rowlabels=["Connected", "Control", "KMeans"],
-)
-```
-
-# Extracting features
-
-```{python}
-from scipy.ndimage import center_of_mass, label, maximum_position
-from skimage.measure import regionprops
-from sklearn.decomposition import PCA
-from sklearn.preprocessing import minmax_scale
-```
-
-```{python}
-sample = ds.ar_tracked_id.isel(sample_id=0).data
-```
-
-```{python}
-ds = ds.load()
-```
-
-```{python}
-data = ds.ar_tracked_id.data
-data = data.reshape((data.shape[0], -1))
-```
-
-```{python}
-centroids = np.zeros((ds.ar_tracked_id.shape[0], 2))
-maximums = np.zeros((ds.ar_tracked_id.shape[0], 2))
-orientation = np.zeros((ds.ar_tracked_id.shape[0]))
-length = np.zeros((ds.ar_tracked_id.shape[0]))
-
-for i, sample in enumerate(ds.ar_tracked_id.data):
-    # lat, lon = center_of_mass(sample, sample)
-    centroids[i] = center_of_mass(sample, sample)
-    maximums[i] = maximum_position(sample, sample)
-    props = regionprops(sample)[0]
-    orientation[i] = props.orientation
-    length[i] = props.axis_major_length
-```
-
-```{python}
-centroids = centroids.astype(int)
-maximums = maximums.astype(int)
-```
-
-```{python}
-lon = minmax_scale(ds.lon.isel(lon=centroids[:, 1]).data)
-lat = minmax_scale(ds.lat.isel(lat=centroids[:, 0]).data)
-
-lon_max = minmax_scale(ds.lon.isel(lon=maximums[:, 1]).data)
-lat_max = minmax_scale(ds.lat.isel(lat=maximums[:, 0]).data)
-```
-
-```{python}
-orientation = minmax_scale(orientation)
-length = minmax_scale(length)
-```
-
-```{python}
-data = np.vstack((lon.data, lat.data, orientation, lon_max, lat_max)).T
-# data = np.vstack((orientation, lon_max, lat_max)).T
-```
-
-```{python}
-# hdb = HDBSCAN(n_jobs=15, min_cluster_size=8)
-kmeans = KMeans_sk(n_clusters=4)
-```
-
-```{python}
-kmeans.fit(data)
-```
-
-```{python}
-unique_labels, count_labels = np.unique_counts(kmeans.labels_)
-```
-
-```{python}
-count_labels
-```
-
-```{python}
-labels = hdb.labels_
-```
-
-```{python}
-fig, ax = pplt.subplots(ncols=5, sharey=False)
-ax[0].scatter(lon, lat, s=4)
-ax[1].scatter(lon_max, lat_max, s=4)
-ax[2].scatter(orientation, s=4)
-ax[3].scatter(length, s=4)
-ax[4].scatter(lon, lat, s=4, c=labels)
-# ax.format(ylim=(0, 1.1), xlim=(0, 1.1))
-```
-
-```{python}
-test_ds = ds.isel(sample_id=slice(None, data.shape[0])).assign_coords(
-    {
-        "label": ("sample_id", labels),
-        # "label_ctrl": ("sample_id", labels_ctrl),
-    }
-)
-```
-
-```{python}
-test_ar = test_ds.groupby("label").sum().ar_tracked_id.load()
-# test_ar_ctrl = test_ds.groupby("label_ctrl").sum().ar_tracked_id.load()
-```
-
-```{python}
-# silhouette_score_samples_ctrl = silhouette_samples(data.reshape(data.shape[0], -1), labels_ctrl)
-# silhouette_scores_ctrl = silhouette_score(data.reshape(data.shape[0], -1), labels_ctrl)
-
-silhouette_score_samples_conn = silhouette_samples(data, labels)
-silhouette_scores_conn = silhouette_score(data, labels)
-```
-
-```{python}
-n_labels = test_ar.label.shape[0]
-fig, ax = pplt.subplots(ncols=n_labels + 1, nrows=1, sharey=False, sharex=False)
-for i in range(n_labels):
-    test_ar.isel(label=i).plot(ax=ax[0, i])
-    # test_ar_ctrl.isel(label_ctrl=i).plot(ax=ax[1, i])
-
-plot_silhouette_samples(labels_conn, n_labels, silhouette_score_samples_conn, ax[0, -1])
-ax[0, -1].axvline(x=silhouette_scores_conn, ls="--", c="k", lw=1)
-
-# plot_silhouette_samples(labels_ctrl, n_labels, silhouette_score_samples_ctrl, ax[1, -1])
-# ax[1, -1].axvline(x=silhouette_scores_ctrl, ls="--", c="k", lw=1)
-
-# ax[0, -1].format(
-#    xlim=(-0.3, 0.5)
-# )
-# ax[1, -1].format(
-#    xlim=(-0.3, 0.5)
-# )
-ax.format(
-    suptitle=f"Clustering [n={test_ds.sample_id.shape[0]}]",
-    # rowlabels=["Connected", "Control"],
-)
+        ax[cluster_i].axvline(x=silhouette_avg, ls="--", c="k", lw=0.7)
+        ax[cluster_i].format(ylim=[0, len(sample_silhouette_values) * 1.1])
+
+    ax[:, 0].format(
+        ylabel="Samples"
+    )
+    
+    ax.format(
+        xlim=(-0.25, 1),
+        #collabels=ARDT_NAMES[:1],
+        xlabel="Silhouette",
+        #title=list(range(local_min_clusters, local_max_clusters + 1)),
+        suptitle=f"{ardt_name}: silhouette plot",
+    )
+    
+    fig.savefig(f"../../figures/n_cluster_eval_norm_res_{ardt_name}.svg")
 ```
