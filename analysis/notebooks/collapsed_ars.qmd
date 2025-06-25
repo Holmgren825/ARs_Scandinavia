@@ -2502,3 +2502,94 @@ fig = nao_cluster_plot(freqs.min("ardt"), "NAO-grouped AR frequencies [Ensemble 
 fig.savefig("../../figures/nao_ar_clusters_ens_min.svg")
 ```
 
+## NAO-grouped AR frequency distributions
+
+```{python}
+import scipy.stats as scstats
+```
+
+```{python}
+res = np.zeros((4,4))
+for cluster in range(4):
+    for nao in range(4):
+        data_curr = freqs.isel(label=cluster, nao_bins=nao).ar_tracked_id.median("ardt").values.flatten()
+        res_inner = np.zeros(4)
+        for nao_2 in range(4):
+            data_cand = freqs.isel(label=cluster, nao_bins=nao_2).ar_tracked_id.median("ardt").values.flatten()
+            res_inner[nao_2] = scstats.wasserstein_distance(data_cand, data_curr)
+        res[cluster, nao] = res_inner.sum()
+res
+```
+
+```{python}
+def nao_dist_plot(freqs: xr.Dataset, title: str):
+    
+    res = np.zeros((4,4))
+    for cluster in range(4):
+        for nao in range(4):
+            data_curr = freqs.isel(label=cluster, nao_bins=nao).ar_tracked_id.values.flatten()
+            res_inner = np.zeros(4)
+            for nao_2 in range(4):
+                data_cand = freqs.isel(label=cluster, nao_bins=nao_2).ar_tracked_id.values.flatten()
+                res_inner[nao_2] = scstats.wasserstein_distance(data_cand, data_curr)
+            res[cluster, nao] = res_inner.sum()
+            
+    fig, ax = plt.subplots(figwidth="8.5cm", abc=True, sharey=False, hratios=(0.7, 0.3), nrows=2)
+    
+    for i in range(4):
+        for j in range(4):
+            data = freqs.isel(label=i, nao_bins=j).ar_tracked_id
+            data = data.fillna(0)
+            x = (2.5*j)+(0.5*i)
+            parts = ax[0].violin(x, data.values.flatten(), fc=f"C{i}", label=f"Cluster {i+1}")
+    
+    
+    for i in range(4):
+        ax[1].plot(np.arange(0.75, 9, 2.5), res[i], label=f"Cluster {i+1}")
+        
+    handles, labels = ax[0].get_legend_handles_labels()
+    fig.legend(handles[::4], labels[::4], ncols=4, loc="b")
+    ax[0].format(
+        ylabel="AR frequency [%]"
+    )
+    ax[1].format(
+        ylabel="Total\nWasserstein distance"
+    )
+    ax.format(
+        xticks=np.arange(0.75, 9, 2.5),
+        xticklabels=[f"{bin}" for bin in freqs.nao_bins.values],
+        xlabel="NAO phase group",
+        suptitle=title,
+        abcbbox=True,
+        abcloc="ul",
+        abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
+        
+    
+    )
+    return fig
+```
+
+```{python}
+fig = nao_dist_plot(freqs.median("ardt"), title="NAO-grouped AR frequency distributions [Ensemble median]")
+```
+
+```{python}
+fig.savefig("../../figures/nao_ar_freq_distributions_ens_med.svg")
+```
+
+```{python}
+fig = nao_dist_plot(freqs.min("ardt"), title="NAO-grouped AR frequency distributions [Ensemble min]")
+```
+
+```{python}
+fig.savefig("../../figures/nao_ar_freq_distributions_ens_min.svg")
+```
+
+```{python}
+fig = nao_dist_plot(freqs.max("ardt"), title="NAO-grouped AR frequency distributions [Ensemble max]")
+```
+
+```{python}
+fig.savefig("../../figures/nao_ar_freq_distributions_ens_max.svg")
+```
+
