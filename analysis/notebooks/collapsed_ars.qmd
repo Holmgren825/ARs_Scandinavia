@@ -212,6 +212,7 @@ fig, ax = plt.subplots(
     ncols=4,
     proj="lcc",
     proj_kw={"central_longitude": 15},
+    share=False,
 )
 for i in range(N_CLUSTERS):
     for j in range(4):
@@ -308,6 +309,7 @@ fig, ax = plt.subplots(
     ncols=4,
     proj="lcc",
     proj_kw={"central_longitude": 15},
+    share=False,
 )
 for i in range(n_clusters):
     for j in range(4):
@@ -525,6 +527,10 @@ corr = corr.quantile([0, 0.5, 1])
 ```
 
 ```{python}
+corr
+```
+
+```{python}
 # Save the correlation
 corr.to_pandas().to_csv(
     "/data/projects/atmo_rivers_scandinavia/ensemble_correlations.csv"
@@ -541,14 +547,19 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
         proj=3 * ["lcc"],
         proj_kw={"central_longitude": 15},
         abc=True,
+        share=False,
     )
     (ar_ds.ar_tracked_id * 100).plot(
-        ax=axs[0], vmin=0, cbar_kwargs={"label": "AR frequency [%]"}, rasterized=True, cmap="bamako"
+        ax=axs[0],
+        vmin=0,
+        cbar_kwargs={"label": "AR frequency [%]"},
+        rasterized=True,
+        cmap="bamako",
     )
     # vmax = max(n_ar_ann_avg.max().values, ar_ann_avg.max().values)
     cmap = plt.Colormap("oslo_r", right=0.8)
     cm = pr_ds.plot(
-        ax=axs[1], vmin=0, cmap=cmap, add_colorbar=False, rasterized=True
+        ax=axs[1], vmin=0, cmap=cmap, add_colorbar=False, rasterized=True, robust=False
     )
     # cm = ar_ann_avg.plot(ax=axs[1], vmin=0, vmax=vmax, cmap="oslor_r", add_colorbar=False)
     axs[1].colorbar(cm, label="Total annual average\nprecipitation [mm]")
@@ -569,7 +580,11 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
         lonlim=LON_SLICE,
         latlim=LAT_SLICE,
         title="",
-        rowlabels=["AR frequency", "Total AR precipitation", "AR precipitation fraction"],
+        rowlabels=[
+            "AR frequency",
+            "Total AR precipitation",
+            "AR precipitation fraction",
+        ],
         suptitle=suptitle,
         abcloc="ul",
         abcbbox=True,
@@ -589,6 +604,70 @@ fig = annual_average_plot(
 
 ```{python}
 fig.savefig("../../figures/ann_avg_ar_pr_ens_med.svg")
+```
+
+#### ECDF test figure 
+
+```{python}
+n_days_groups = n_days.values.reshape((1, 1, -1, 1, 1))
+```
+
+```{python}
+# test = (ar_ens_ds.groupby(["start_time.year", "ardt", "label"]).sum() / n_days_groups).ar_tracked_id.compute()
+test = (ar_ens_ds.groupby(["start_time.year", "ardt"]).sum() / n_days).compute()
+```
+
+```{python}
+# test_med = test.sum("label").median("ardt")
+test_med = test.median("ardt").ar_tracked_id
+```
+
+```{python}
+cmap = plt.Colormap("berlin", samples=40)
+```
+
+```{python}
+fig, ax = plt.subplots(figheight="10cm")
+for i in range(0, 40):
+    data = test_med.isel(year=i).values.flatten() * 100
+    ax.ecdf(data, complementary=True, color=cmap.colors[i], lw=0.7, alpha=0.9)
+
+ax.ecdf(
+    test_med.median("year").values.flatten() * 100,
+    complementary=True,
+    ls="--",
+    c="k",
+    label="Median",
+)
+
+fig.colorbar(cmap, values=range(1980, 2019), label="Year", alpha=0.9)
+fig.legend(loc="b")
+ax.format(
+    suptitle="ECDF of annual AR frequency",
+    xlabel="Annual average AR frequency [%]",
+    ylabel="Probability of occurrence",
+)
+```
+
+```{python}
+i
+```
+
+```{python}
+import scipy.stats as scstats
+```
+
+```{python}
+all_res = np.zeros(40)
+for i in range(40):
+    data = test_med.isel(year=i).values.flatten() * 100
+    res = scstats.ecdf(data).sf
+    all_res[i] = np.trapezoid(res.probabilities, dx=np.diff(res.quantiles))
+```
+
+```{python}
+fig, ax = plt.subplots()
+ax.scatter(range(1980, 2020), all_res)
 ```
 
 ### Tests
@@ -703,8 +782,8 @@ fig = annual_average_plot(
     ar_ann_avg_frq.max("ardt"),
     ar_ann_avg_pr.max("ardt"),
     "Annual average precipitation\nduring ARs [Ensemble max]",
-    ann_avg_precip_ds
-    )
+    ann_avg_precip_ds,
+)
 ```
 
 ```{python}
@@ -718,8 +797,8 @@ fig = annual_average_plot(
     ar_ann_avg_frq.min("ardt"),
     ar_ann_avg_pr.min("ardt"),
     "Annual average precipitation\nduring ARs [Ensemble min]",
-    ann_avg_precip_ds
-    )
+    ann_avg_precip_ds,
+)
 ```
 
 ```{python}
@@ -794,6 +873,28 @@ ann_ar_precip_max = (
 )
 ```
 
+```{python}
+weights = np.cos(np.deg2rad(precip_ds.latitude))
+ann_precip = (
+    precip_ds.groupby("valid_time.year")
+    .sum()
+    .tp.compute()
+    .weighted(weights)
+    .mean(["latitude", "longitude"])
+)
+ann_precip_max = (
+    precip_ds.groupby("valid_time.year")
+    .sum()
+    .tp.compute()
+    .weighted(weights)
+    .quantile(0.99, dim=["latitude", "longitude"])
+)
+```
+
+```{python}
+import scipy.stats as sc_stats
+```
+
 #### Initial trend plot
 
 ```{python}
@@ -850,28 +951,6 @@ fig.savefig("../../figures/ar_ann_avg_trends.svg")
 ```
 
 #### Alternative trends plot.
-
-```{python}
-weights = np.cos(np.deg2rad(precip_ds.latitude))
-ann_precip = (
-    precip_ds.groupby("valid_time.year")
-    .sum()
-    .tp.compute()
-    .weighted(weights)
-    .mean(["latitude", "longitude"])
-)
-ann_precip_max = (
-    precip_ds.groupby("valid_time.year")
-    .sum()
-    .tp.compute()
-    .weighted(weights)
-    .quantile(0.99, dim=["latitude", "longitude"])
-)
-```
-
-```{python}
-import scipy.stats as sc_stats
-```
 
 Correlation between AR freq. and total annual precip.
 
@@ -941,9 +1020,7 @@ Correlation between AR precip and total precip.
 res = []
 for i in range(4):
     ardt = ar_trend_max.isel(ardt=i).ardt.values
-    corr = sc_stats.pearsonr(
-        ann_precip.values, ann_ar_precip_max.isel(ardt=i).values
-    )
+    corr = sc_stats.pearsonr(ann_precip.values, ann_ar_precip_max.isel(ardt=i).values)
     res.append([ardt, corr.statistic, corr.pvalue])
 ```
 
@@ -1021,14 +1098,14 @@ fig.text(
     ha="center",
     rotation="vertical",
     in_layout=True,
-    color="C0"
+    color="C0",
 )
 bar_ax[2].format(
     ylabel=" ",
 )
 
 ax.format(
-    #color="C1",
+    # color="C1",
     suptitle="Annual AR frequency and total precipitation",
     xlabel="Year",
     ylabel="AR Frequency [%]",
@@ -1082,7 +1159,7 @@ unique.to_pandas().median()
 ```
 
 ```{python}
-ar_ts_trend = ar_ts_ens.groupby(["valid_time.year", "ardt"]).count()# / n_days * 100
+ar_ts_trend = ar_ts_ens.groupby(["valid_time.year", "ardt"]).count()  # / n_days * 100
 ```
 
 ```{python}
@@ -1097,38 +1174,38 @@ np.median(np.asarray(mk_res_avg), axis=0)
 ```
 
 ```{python}
+bar_colors = plt.get_colors("tab20c")[:4]
 fig, ax = plt.subplots(figheight="6cm", figwidth="12cm")
 
 # for i in range(4):
 #     ar_ts_trend.isel(ardt=i).plot(ax=ax, label=ar_ts_trend.isel(ardt=i).ardt, zorder=5)
 ar_ts_trend.median("ardt").plot(ax=ax, label="ARDT median", c="k", lw=1, zorder=5)
 
-ar_ts_trend.min("ardt").plot(ax=ax, label="ARDT min-max", c="k", lw=1, ls="--", zorder=5, alpha=0.6)
+ar_ts_trend.min("ardt").plot(
+    ax=ax, label="ARDT min-max", c="k", lw=1, ls="--", zorder=5, alpha=0.6
+)
 ar_ts_trend.max("ardt").plot(ax=ax, c="k", lw=1, ls="--", zorder=5, alpha=0.6)
 
-#ax.fill_between(ar_ts_trend.year, trend_min, trend_max, zorder=5, alpha=0.5)
+# ax.fill_between(ar_ts_trend.year, trend_min, trend_max, zorder=5, alpha=0.5)
 
 bar_ax = ax.twinx(color="C0", ylabel="Precipitation [m]")
 
 
 bar_ax.bar(
-    ann_precip.year,
-    ann_precip.values,
-    c=bar_colors[1],
-    label="Annual precipitation"
+    ann_precip.year, ann_precip.values, c=bar_colors[1], label="Annual precipitation"
 )
 bar_ax.bar(
     ann_precip.year,
     ann_ar_precip.median("ardt").values,
     c=bar_colors[0],
-    label="Annual AR precipitation"
+    label="Annual AR precipitation",
 )
 ax.legend(loc="b", ncols=4)
 ax.format(
     suptitle="Total annual AR occurrence and average annual precipitation over Scandinavia",
     title="",
     xlabel="Year",
-    ylabel="AR occurrence"
+    ylabel="AR occurrence",
 )
 ```
 
@@ -1140,9 +1217,7 @@ fig.savefig("../../figures/ar_total_frq_tp.svg")
 res = []
 for i in range(4):
     ardt = ar_ts_trend.isel(ardt=i)
-    corr = sc_stats.pearsonr(
-        ann_precip.values, ardt.values
-    )
+    corr = sc_stats.pearsonr(ann_precip.values, ardt.values)
     res.append([ardt.ardt.values, corr.statistic, corr.pvalue])
 ```
 
@@ -1163,9 +1238,7 @@ corr_df.to_csv("/data/projects/atmo_rivers_scandinavia/ar_total_frq_corr.csv")
 res = []
 for i in range(4):
     ardt = ar_ts_trend.isel(ardt=i)
-    corr = sc_stats.pearsonr(
-        ann_ar_precip.isel(ardt=i).values, ardt.values
-    )
+    corr = sc_stats.pearsonr(ann_ar_precip.isel(ardt=i).values, ardt.values)
     res.append([ardt.ardt.values, corr.statistic, corr.pvalue])
 ```
 
@@ -1180,6 +1253,27 @@ corr_df[["r2", "p-val"]].median(axis=0)
 
 ```{python}
 corr_df.to_csv("/data/projects/atmo_rivers_scandinavia/ar_total_frq_corr_ar_tp.csv")
+```
+
+```{python}
+res = []
+for i in range(4):
+    ardt = ar_ts_trend.isel(ardt=i)
+    corr = sc_stats.pearsonr(ann_ar_precip.isel(ardt=i).values, ann_precip.values)
+    res.append([ardt.ardt.values, corr.statistic, corr.pvalue])
+```
+
+```{python}
+corr_df = pd.DataFrame(res, columns=["ardt", "r2", "p-val"])
+corr_df
+```
+
+```{python}
+corr_df[["r2", "p-val"]].median(axis=0)
+```
+
+```{python}
+corr_df.to_csv("/data/projects/atmo_rivers_scandinavia/corr_ar_precip_ann_precip.csv")
 ```
 
 ## Spatial correlation over time
@@ -1241,9 +1335,6 @@ ann_tp_field_norm.cf.mean("longitude").T.plot(ax=ax)
 
 Get histograms.
 Select only unique time steps, no doubles.
-
-The average rain rate per hour in ERA5 for this domain is ~0.12 mm/h, 0 values not included.
-With a maximum ~13mm/h.
 
 Here we compute the spatial average and 75th percentile before doing the histogram.
 - Reduces the variability somewhat.
@@ -1597,6 +1688,14 @@ ar_precip_ens = ar_precip_ens.assign_coords({"label": ar_ts_ens})
 ```
 
 ```{python}
+(
+    ar_precip_ens.valid_time.groupby(["valid_time.year", "ardt", "label"]).count()
+    / n_days
+    * 100
+).mean("year")
+```
+
+```{python}
 # NOTE: Need to divide by 4 since we have 4 ARDTs?
 ar_precip_ens_avg = (
     ar_precip_ens.groupby(["label", "ardt", "valid_time.year"])
@@ -1666,8 +1765,7 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
         ncols=2,
         proj=n_clusters * 2 * ["lcc"],
         proj_kw={"central_longitude": 15},
-        sharey=True,
-        sharex=True,
+        share=False,
         abc=True,
     )
     vmax = ar_precip_ens_avg.tp.max().values
@@ -1963,27 +2061,37 @@ We group by month, sum the AR occurrences, and then divide by the number of time
 No yearly grouping.
 
 ```{python}
-n_ts_per_month = precip_ds.valid_time.groupby("valid_time.month").count()
+n_ts_per_month = precip_ds.valid_time.groupby(
+    ["valid_time.month", "valid_time.year"]
+).count()
 ```
 
 ```{python}
 weights = np.cos(np.deg2rad(ar_ens_ds.lat))
 group_ar_cycle = (
-    (ar_ens_ds.groupby(["start_time.month", "label", "ardt"]).sum())
-    / n_ts_per_month
+    (ar_ens_ds.groupby(["start_time.month", "label", "ardt"]).sum()) / n_ts_per_month
 ).compute()
+```
+
+```{python}
+group_ar_cycle = ar_precip_ens.valid_time.groupby(
+    ["valid_time.year", "valid_time.month", "label", "ardt"]
+).count()
+group_ar_yr = ar_precip_ens.valid_time.groupby(
+    ["valid_time.year", "label", "ardt"]
+).count()
 ```
 
 Compute the weighted spatial 75th percentile.
 
 ```{python}
-data = (
-    (group_ar_cycle).weighted(weights).quantile(0.75, dim=["lat", "lon"])
-)
+# data = (group_ar_cycle).weighted(weights).quantile(0.75, dim=["lat", "lon"])
+# data = group_ar_cycle.mean("year")
+data = (group_ar_cycle / n_ts_per_month) * 100
 ```
 
 ```{python}
-data = data.roll({"month": 1}, roll_coords=False) * 100
+data = data.roll({"month": 1}, roll_coords=False)  # * 100
 ```
 
 ```{python}
@@ -1992,11 +2100,11 @@ fig, ax = plt.subplots(nrows=4, figwidth="8.5cm", figheight="12cm", abc=True)
 win_size = 10
 # Isn't this just spatial mean?
 for i in range(4):
-    (data.isel(label=i).median("ardt").ar_tracked_id).plot(
+    (data.isel(label=i).median("ardt").mean("year")).plot(
         ax=ax[i], label="Ensemble Median", lw=1
     )
-    cycle_max = data.isel(label=i).max("ardt").ar_tracked_id
-    cycle_min = data.isel(label=i).min("ardt").ar_tracked_id
+    cycle_max = data.isel(label=i).max("ardt").mean("year")  # .ar_tracked_id
+    cycle_min = data.isel(label=i).min("ardt").mean("year")  # .ar_tracked_id
     ax[i].fill_between(
         cycle_min.month, cycle_min, cycle_max, alpha=0.5, label="Ensemble Min - Max"
     )
@@ -2020,7 +2128,7 @@ months = [
 ax.format(
     title="",
     xlabel="Month",
-    ylabel="Spatial P$_{75}$ AR probability [%]",
+    ylabel="Total AR frequency [%]",
     rowlabels=[f"Cluster {i}" for i in range(1, n_clusters + 1)],
     suptitle="Average AR seasonal cycle",
     xlocator=range(1, 13),
@@ -2029,6 +2137,7 @@ ax.format(
     # xformatter="%b",
     xrotation=0,
     ymin=0,
+    ymax=25,
     abcloc="ul",
     abcbbox=True,
     abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
@@ -2037,6 +2146,64 @@ ax.format(
 
 ```{python}
 fig.savefig("../../figures/avg_seasonal_cycle_per_cluster.svg")
+```
+
+```{python}
+n_clusters = 4
+fig, ax = plt.subplots(nrows=4, figwidth="8.5cm", figheight="12cm", abc=True)
+win_size = 10
+# Isn't this just spatial mean?
+for i in range(4):
+    (data.isel(label=i).median("ardt").mean("year")).plot(
+        ax=ax[i], label="Ensemble Median\nAverage year", lw=1
+    )
+    cycle_max = (
+        data.isel(label=i).median("ardt").quantile(0.75, "year")
+    )  # .ar_tracked_id
+    cycle_min = (
+        data.isel(label=i).median("ardt").quantile(0.25, "year")
+    )  # .ar_tracked_id
+    ax[i].fill_between(
+        cycle_min.month,
+        cycle_min,
+        cycle_max,
+        alpha=0.5,
+        label="Ensemble Median\nAnnual IQR",
+    )
+
+handles, labels = ax[i].get_legend_handles_labels()
+fig.legend(handles, labels, loc="b", ncols=2)
+months = [
+    "Dec",
+    "Jan",
+    "Feb",
+    "Mar",
+    "Apr",
+    "May",
+    "Jun",
+    "Jul",
+    "Aug",
+    "Sep",
+    "Oct",
+    "Nov",
+]
+ax.format(
+    title="",
+    xlabel="Month",
+    ylabel="Total AR frequency [%]",
+    rowlabels=[f"Cluster {i}" for i in range(1, n_clusters + 1)],
+    suptitle="Average AR seasonal cycle",
+    xlocator=range(1, 13),
+    # xtickminor=False,
+    xticklabels=months,
+    # xformatter="%b",
+    xrotation=0,
+    ymin=0,
+    # ymax=25,
+    abcloc="ul",
+    abcbbox=True,
+    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
+)
 ```
 
 This is somewhat hinting at what I suspected in the seasonality. That we don't se propely in the maps? This is better no?
@@ -2131,7 +2298,9 @@ ar_ens_ds = ar_ens_ds.load()
 ```
 
 ```{python}
-n_days_season = precip_ds.valid_time.groupby(["valid_time.year", "valid_time.season"]).count()
+n_days_season = precip_ds.valid_time.groupby(
+    ["valid_time.year", "valid_time.season"]
+).count()
 ```
 
 ```{python}
@@ -2146,10 +2315,9 @@ n_days_season.shape
 
 ```{python}
 season_grouped_ars = (
-    (
-        ar_ens_ds.groupby(["start_time.season", "start_time.year", "label", "ardt"])
-        .sum()
-    )#.mean("year")
+    ar_ens_ds.groupby(
+        ["start_time.season", "start_time.year", "label", "ardt"]
+    ).sum()  # .mean("year")
     # .median("ardt")
 )
 ```
@@ -2167,7 +2335,9 @@ Uses broadcasting to compute frequencies per season.
 `n_days_season` is the number of days in each season in each year.
 
 ```{python}
-season_grouped_ars = season_grouped_ars / n_days_season.T.values.reshape(1, 1, n_seasons, n_years, 1, 1)
+season_grouped_ars = season_grouped_ars / n_days_season.T.values.reshape(
+    1, 1, n_seasons, n_years, 1, 1
+)
 season_grouped_ars = season_grouped_ars.mean("year")
 ```
 
@@ -2395,6 +2565,10 @@ freqs = ar_nao_groups / nao_counts * 100
 ```
 
 ```{python}
+freqs = freqs.compute()
+```
+
+```{python}
 def nao_cluster_plot(freqs, suptitle):
     n_clusters = freqs.label.shape[0]
     nrows = n_clusters
@@ -2405,25 +2579,33 @@ def nao_cluster_plot(freqs, suptitle):
         ncols=ncols,
         proj=nrows * ncols * ["lcc"],
         proj_kw={"central_longitude": 15},
-        sharey=False,
-        sharex=False,
+        share=False,
         abc=True,
     )
 
     vmax = np.round(freqs.ar_tracked_id.quantile(0.975).values, 1)
     # vmax = 3
-    print(vmax)
+    # print(vmax)
 
     for i in range(nrows):
-        # vmax = freqs.isel(label=i).ar_tracked_id.max().values
         for j in range(4):
-            cm = freqs.isel(label=i, nao_bins=j).ar_tracked_id.plot(
+            data = freqs.isel(label=i, nao_bins=j).ar_tracked_id
+            cm = data.plot(
                 ax=axs[i, j],
                 rasterized=True,
                 vmin=0,
                 vmax=vmax,
                 add_colorbar=False,
                 cmap="bamako",
+            )
+            local_max = data.max().values
+            axs[i, j].annotate(
+                f"Max: {local_max:.1f}",
+                (1, 0),
+                xycoords="axes fraction",
+                bbox={"boxstyle": "square", "facecolor": "white"},
+                ha="right",
+                va="bottom",
             )
     fig.colorbar(
         cm,
@@ -2487,13 +2669,21 @@ import scipy.stats as scstats
 ```
 
 ```{python}
-res = np.zeros((4,4))
+res = np.zeros((4, 4))
 for cluster in range(4):
     for nao in range(4):
-        data_curr = freqs.isel(label=cluster, nao_bins=nao).ar_tracked_id.median("ardt").values.flatten()
+        data_curr = (
+            freqs.isel(label=cluster, nao_bins=nao)
+            .ar_tracked_id.median("ardt")
+            .values.flatten()
+        )
         res_inner = np.zeros(4)
         for nao_2 in range(4):
-            data_cand = freqs.isel(label=cluster, nao_bins=nao_2).ar_tracked_id.median("ardt").values.flatten()
+            data_cand = (
+                freqs.isel(label=cluster, nao_bins=nao_2)
+                .ar_tracked_id.median("ardt")
+                .values.flatten()
+            )
             res_inner[nao_2] = scstats.wasserstein_distance(data_cand, data_curr)
         res[cluster, nao] = res_inner.sum()
 res
@@ -2501,38 +2691,41 @@ res
 
 ```{python}
 def nao_dist_plot(freqs: xr.Dataset, title: str):
-    
-    res = np.zeros((4,4))
+
+    res = np.zeros((4, 4))
     for cluster in range(4):
         for nao in range(4):
-            data_curr = freqs.isel(label=cluster, nao_bins=nao).ar_tracked_id.values.flatten()
+            data_curr = freqs.isel(
+                label=cluster, nao_bins=nao
+            ).ar_tracked_id.values.flatten()
             res_inner = np.zeros(4)
             for nao_2 in range(4):
-                data_cand = freqs.isel(label=cluster, nao_bins=nao_2).ar_tracked_id.values.flatten()
+                data_cand = freqs.isel(
+                    label=cluster, nao_bins=nao_2
+                ).ar_tracked_id.values.flatten()
                 res_inner[nao_2] = scstats.wasserstein_distance(data_cand, data_curr)
             res[cluster, nao] = res_inner.sum()
-            
-    fig, ax = plt.subplots(figwidth="8.5cm", abc=True, sharey=False, hratios=(0.7, 0.3), nrows=2)
-    
+
+    fig, ax = plt.subplots(
+        figwidth="8.5cm", abc=True, sharey=False, hratios=(0.7, 0.3), nrows=2
+    )
+
     for i in range(4):
         for j in range(4):
             data = freqs.isel(label=i, nao_bins=j).ar_tracked_id
             data = data.fillna(0)
-            x = (2.5*j)+(0.5*i)
-            parts = ax[0].violin(x, data.values.flatten(), fc=f"C{i}", label=f"Cluster {i+1}")
-    
-    
+            x = (2.5 * j) + (0.5 * i)
+            parts = ax[0].violin(
+                x, data.values.flatten(), fc=f"C{i}", label=f"Cluster {i+1}"
+            )
+
     for i in range(4):
         ax[1].plot(np.arange(0.75, 9, 2.5), res[i], label=f"Cluster {i+1}")
-        
+
     handles, labels = ax[0].get_legend_handles_labels()
     fig.legend(handles[::4], labels[::4], ncols=4, loc="b")
-    ax[0].format(
-        ylabel="AR frequency [%]"
-    )
-    ax[1].format(
-        ylabel="Total\nWasserstein distance"
-    )
+    ax[0].format(ylabel="AR frequency [%]")
+    ax[1].format(ylabel="Total\nWasserstein distance")
     ax.format(
         xticks=np.arange(0.75, 9, 2.5),
         xticklabels=[f"{bin}" for bin in freqs.nao_bins.values],
@@ -2541,14 +2734,15 @@ def nao_dist_plot(freqs: xr.Dataset, title: str):
         abcbbox=True,
         abcloc="ul",
         abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
-        
-    
     )
     return fig
 ```
 
 ```{python}
-fig = nao_dist_plot(freqs.median("ardt"), title="NAO-grouped AR frequency distributions [Ensemble median]")
+fig = nao_dist_plot(
+    freqs.median("ardt"),
+    title="NAO-grouped AR frequency distributions [Ensemble median]",
+)
 ```
 
 ```{python}
@@ -2556,7 +2750,9 @@ fig.savefig("../../figures/nao_ar_freq_distributions_ens_med.svg")
 ```
 
 ```{python}
-fig = nao_dist_plot(freqs.min("ardt"), title="NAO-grouped AR frequency distributions [Ensemble min]")
+fig = nao_dist_plot(
+    freqs.min("ardt"), title="NAO-grouped AR frequency distributions [Ensemble min]"
+)
 ```
 
 ```{python}
@@ -2564,10 +2760,11 @@ fig.savefig("../../figures/nao_ar_freq_distributions_ens_min.svg")
 ```
 
 ```{python}
-fig = nao_dist_plot(freqs.max("ardt"), title="NAO-grouped AR frequency distributions [Ensemble max]")
+fig = nao_dist_plot(
+    freqs.max("ardt"), title="NAO-grouped AR frequency distributions [Ensemble max]"
+)
 ```
 
 ```{python}
 fig.savefig("../../figures/nao_ar_freq_distributions_ens_max.svg")
 ```
-
