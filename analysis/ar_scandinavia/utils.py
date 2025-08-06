@@ -57,7 +57,9 @@ def subsel_ds(
     if start_year is not None and end_year is not None:
         sel_ds = sel_ds.cf.sel(time=slice(start_year, end_year))
 
-    return sel_ds.chunk("auto")
+    # Don't remember why I added a chunk("auto") here.
+    # Removed now since it messes with the chunk dependent functions.
+    return sel_ds
 
 
 def compute_ar_pr_values(
