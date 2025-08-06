@@ -1260,33 +1260,95 @@ n_ar_precip_ens_nz = n_ar_precip_ens  # .where(n_ar_precip_ens.tp > 0, drop=True
 weights = np.cos(np.deg2rad(ar_precip_ens_nz.latitude))
 
 # Both of these reductions are weighted.
-# Mean, also go from 6 hours sums to 1 hour averages.
-ar_precip_hist = (
-    (ar_precip_ens_nz / 6).weighted(weights).mean(["latitude", "longitude"])
-)
+# Mean
+ar_precip_hist = (ar_precip_ens_nz).weighted(weights).mean(["latitude", "longitude"])
 n_ar_precip_hist = (
-    (n_ar_precip_ens_nz / 6).weighted(weights).mean(["latitude", "longitude"])
+    (n_ar_precip_ens_nz).weighted(weights).mean(["latitude", "longitude"])
 )
 
 # Max (0.75 quantile)
 # No weights for quantiles.
 ar_precip_hist_max = (
-    (ar_precip_ens_nz / 6)
-    .weighted(weights)
-    .quantile(0.75, dim=["latitude", "longitude"])
+    (ar_precip_ens_nz).weighted(weights).quantile(1, dim=["latitude", "longitude"])
 )
 n_ar_precip_hist_max = (
-    (n_ar_precip_ens_nz / 6)
-    .weighted(weights)
-    .quantile(0.75, dim=["latitude", "longitude"])
+    (n_ar_precip_ens_nz).weighted(weights).quantile(1, dim=["latitude", "longitude"])
 )
 ```
 
+Compute the histograms.
+
 ```{python}
+bin_threshold_qtile = 0.99
+density = True
+n_bins = 10
+```
+
+```{python}
+bin_threshold = np.round(
+    max(
+        ar_precip_hist.tp.quantile(bin_threshold_qtile).compute(),
+        n_ar_precip_hist.tp.quantile(bin_threshold_qtile).compute(),
+    ),
+    decimals=2,
+)
 bin_max = np.round(
     max(
         ar_precip_hist.tp.max().compute(),
         n_ar_precip_hist.tp.max().compute(),
+    ),
+    decimals=2,
+)
+```
+
+Get the bin range for the histograms.
+
+```{python}
+# hist_bin_range_avg = (0, bin_max.values)
+bins_avg = np.linspace(0, bin_threshold.values, n_bins + 1)
+bins_avg_open = bins_avg.copy()
+bins_avg_open[-1] = bin_max.values
+```
+
+Histograms for the spatial average.
+
+```{python}
+hist_ar = np.zeros((4, n_bins))
+for i, ardt in enumerate(ARDT_NAMES):
+    indices = ar_precip_hist.tp.groupby("ardt").groups[ardt]
+    hist, _ = np.histogram(
+        ar_precip_hist.isel(valid_time=indices).tp.data,
+        # range=hist_bin_range_avg,
+        bins=bins_avg_open,
+        density=density,
+    )
+    hist_ar[i] = hist
+```
+
+```{python}
+hist_n_ar, _ = np.histogram(
+    n_ar_precip_hist.tp.data, bins=bins_avg_open, density=density
+)
+# hist_n_ar = hist_n_ar.compute()
+```
+
+```{python}
+bins_avg_open
+```
+
+Histograms for the spatial max.
+
+```{python}
+bin_threshold = np.round(
+    max(
+        ar_precip_hist_max.tp.quantile(bin_threshold_qtile).compute(),
+        n_ar_precip_hist_max.tp.quantile(bin_threshold_qtile).compute(),
+    ),
+    decimals=2,
+)
+
+bin_max = np.round(
+    max(
         ar_precip_hist_max.tp.max().compute(),
         n_ar_precip_hist_max.tp.max().compute(),
     ),
@@ -1294,155 +1356,51 @@ bin_max = np.round(
 )
 ```
 
-Get the bin range for the histgrams.
+Get the bin range for the histograms.
 
 ```{python}
-hist_bin_range = (0, bin_max.values)
-n_bins = 15
-```
-
-Histograms for the spatial average.
-
-```{python}
-hist_ar = np.zeros((4, 15))
-for i, ardt in enumerate(ARDT_NAMES):
-    indices = ar_precip_hist.tp.groupby("ardt").groups[ardt]
-    hist, _ = np.histogram(
-        ar_precip_hist.isel(valid_time=indices).tp.data,
-        range=hist_bin_range,
-        bins=n_bins,
-        density=True,
-    )
-    hist_ar[i] = hist
+bins_max = np.linspace(0, bin_threshold.values, n_bins + 1)
+bins_max_open = bins_max.copy()
+bins_max_open[-1] = bin_max.values
 ```
 
 ```{python}
-hist_n_ar, bins = np.histogram(
-    n_ar_precip_hist.tp.data, range=hist_bin_range, bins=n_bins, density=True
+qtile_hist_n_ar, _ = np.histogram(
+    n_ar_precip_hist_max.tp.data, bins=bins_max_open, density=density
 )
-# hist_n_ar = hist_n_ar.compute()
 ```
 
-Histograms for the 75th percentile.
-
 ```{python}
-qtile_hist_ar = np.zeros((4, 15))
+qtile_hist_ar = np.zeros((4, n_bins))
 for i, ardt in enumerate(ARDT_NAMES):
     indices = ar_precip_hist_max.tp.groupby("ardt").groups[ardt]
     hist, _ = np.histogram(
         ar_precip_hist_max.isel(valid_time=indices).tp.data,
-        range=hist_bin_range,
-        bins=n_bins,
-        density=True,
+        bins=bins_max_open,
+        density=density,
     )
     qtile_hist_ar[i] = hist
-```
-
-```{python}
-qtile_hist_n_ar, bins = np.histogram(
-    n_ar_precip_hist_max.tp.data, range=hist_bin_range, bins=n_bins, density=True
-)
-# qtile_hist_n_ar = qtile_hist_n_ar.compute()
 ```
 
 Compute the field for the average time step with and without ARs.
 
 ```{python}
-# Average. Divide by 6 to get average hourly.
-ar_avg_pr_ts = ar_precip_ens_nz.groupby("ardt").mean().median("ardt").load() / 6
+# ar_avg_pr_ts = ar_precip_ens_nz.groupby("ardt").mean().median("ardt").load()
 # ar_avg_pr_ts = ar_precip_mh.where(ar_precip_mh.tp > 0).groupby("ardt").mean().mean("ardt").compute()
-n_ar_avg_pr_ts = n_ar_precip_ens_nz.cf.mean("time").compute() / 6
-```
-
-```{python}
-#| jupyter: {outputs_hidden: true, source_hidden: true}
-fig, axs = plt.subplots(
-    figwidth="8.3cm",
-    # figheight="12cm",
-    nrows=3,
-    proj=2 * ["lcc"] + [None],
-    proj_kw={"central_longitude": 15},
-    sharey=False,
-    sharex=False,
-    abc=True,
-)
-
-qtile = 1  # 0.975
-vmax = max(
-    ar_avg_pr_ts.tp.quantile(qtile).values, n_ar_avg_pr_ts.tp.quantile(qtile).values
-)
-
-cmap = plt.Colormap("oslo_r", right=0.8)
-
-pr_cm = (n_ar_avg_pr_ts.tp).plot(
-    ax=axs[0], cmap=cmap, vmin=0, vmax=vmax, add_colorbar=False, rasterized=True
-)
-
-pr_cm = (ar_avg_pr_ts.tp).plot(
-    ax=axs[1], cmap=cmap, vmin=0, vmax=vmax, add_colorbar=False, rasterized=True
-)
-pr_cbar = fig.colorbar(
-    pr_cm,
-    loc="right",
-    rows=(1, 2),
-    length=0.7,
-    label="Precipitation [mm/h]",
-    # extend="max",
-)
-
-axs[2].stairs(hist_ar, bins, label="AR [Avg.]", color="C0")
-axs[2].stairs(qtile_hist_ar, bins, label="— [3rd qtile]", color="C0", ls="--")
-
-axs[2].stairs(hist_n_ar, bins, label="No AR [Avg.]", color="C1")
-
-axs[2].stairs(qtile_hist_n_ar, bins, label="— [3rd qtile]", color="C1", ls="--")
-
-axs[2].format(
-    yscale="log",
-    xlabel="Precipitation [mm/h]",
-    ylabel="Density",
-    ytickloc="l",
-    ylabelloc="l",
-    title="Histogram of 1 hour precipitation",
-)
-axs[2].legend(loc="ll", ncols=1)
-
-# Remove titles on maps.
-axs[:2].format(title="")
-axs.format(
-    coast=True,
-    reso="med",
-    latlabels=True,
-    lonlabels=True,
-    lonlim=LON_SLICE,
-    latlim=LAT_SLICE,
-    # title="",
-    rowlabels=["Non-AR", "AR", ""],
-    suptitle="Average hourly precipitation\n[Ensemble median.]",
-    abcloc="ul",
-    abcbbox=True,
-    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
-)
-```
-
-```{python}
-fig.savefig("../../figures/avg_precip_timestep_ar_ens.svg")
+# n_ar_avg_pr_ts = n_ar_precip_ens_nz.cf.mean("time").compute()
 ```
 
 New figure with histograms only.
 
 ```{python}
-ens_min
-```
-
-```{python}
 fig, ax = plt.subplots(
-    figwidth="8.3cm",
+    figwidth="8.5cm",
+    figheight="12cm",
+    nrows=2,
     # figheight="12cm",
     abc=True,
+    sharex=False,
 )
-
-qtile = 1  # 0.975
 
 
 # ax.stairs(np.max(hist_ar, axis=0), bins, color="C0", fill=True, alpha=0.5, zorder=0)
@@ -1454,44 +1412,65 @@ qtile = 1  # 0.975
 #    step="pre",
 #    alpha=0.2,
 # )
-ens_min = np.min(hist_ar, axis=0)
+qtile = 0  # 0.975
+
+ens_min = np.quantile(hist_ar, qtile, axis=0)
 ens_min = np.concat([ens_min[:1], ens_min])
 
-ens_max = np.max(qtile_hist_ar, axis=0)
+ens_max = np.quantile(hist_ar, 1 - qtile, axis=0)
 ens_max = np.concat([ens_max[:1], ens_max])
 
 ens_med = np.median(hist_ar, axis=0)
 ens_med_pad = np.concat([ens_med[:1], ens_med])
 
-ax.fill_between(
-    bins,
+ax[0].fill_between(
+    bins_avg,
     ens_min,
-    np.where(ens_max > ens_med_pad, ens_max, ens_med_pad),
+    ens_max,
     color="C0",
     step="pre",
     alpha=0.2,
 )
 
-ax.stairs(ens_med, bins, label="AR [Avg.]", color="C0")
-# ax.stairs(
-#    np.median(qtile_hist_ar, axis=0), bins, label="AR [3rd qtile]", color="C0", ls="--"
-# )
-#
+# Spatial average
+ax[0].stairs(ens_med, bins_avg, label="AR [Median]", color="C0")
 ## Non AR conditions.
-ax.stairs(hist_n_ar, bins, label="No AR [Avg.]", color="C1")
+ax[0].stairs(hist_n_ar, bins_avg, label="No AR", color="C1")
 
-ax.fill_between(
-    bins,
-    np.concat([hist_n_ar[:1], hist_n_ar]),
-    np.concat([qtile_hist_n_ar[:1], qtile_hist_n_ar]),
-    color="C1",
+# Spatial max
+ens_min = np.quantile(qtile_hist_ar, qtile, axis=0)
+ens_min = np.concat([ens_min[:1], ens_min])
+
+ens_max = np.quantile(qtile_hist_ar, 1 - qtile, axis=0)
+ens_max = np.concat([ens_max[:1], ens_max])
+
+ens_med = np.median(qtile_hist_ar, axis=0)
+ax[1].stairs(ens_med, bins_max, color="C0")
+## Non AR conditions.
+ax[1].stairs(qtile_hist_n_ar, bins_max, color="C1")
+
+ax[1].fill_between(
+    bins_max,
+    ens_min,
+    ens_max,
+    color="C0",
     step="pre",
     alpha=0.2,
 )
 
+# ax.fill_between(
+#     bins,
+#     np.concat([hist_n_ar[:1], hist_n_ar]),
+#     np.concat([qtile_hist_n_ar[:1], qtile_hist_n_ar]),
+#     color="C1",
+#     step="pre",
+#     alpha=0.2,
+# )
+
+
 ax.format(
     yscale="log",
-    xlabel="Precipitation [mm/h]",
+    xlabel="Precipitation [mm/6h]",
     ylabel="Density",
     ytickloc="l",
     ylabelloc="l",
@@ -1499,12 +1478,11 @@ ax.format(
 )
 fig.legend(loc="b", ncols=3)
 
-# Remove titles on maps.
-ax.format(title="")
 ax.format(
-    # title="",
-    suptitle="Average hourly precipitation\n[Ensemble full range]",
-    abcloc="ul",
+    title="",
+    suptitle="Histograms of 6-hourly total precipitation",
+    rowlabels=["Spatial average", "Spatial max"],
+    abcloc="ur",
     abcbbox=True,
     abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
 )
