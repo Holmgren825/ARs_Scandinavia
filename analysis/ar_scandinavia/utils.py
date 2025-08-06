@@ -162,8 +162,8 @@ def compute_spatial_correltion(
 ) -> xr.DataArray:
     """Compute the weighted spatial correlation between two patterns."""
     # NOTE: Normalize the data.
-    da_a = (da_a - da_a.mean()) / da_a.std()
-    da_b = (da_b - da_b.mean()) / da_b.std()
+    # da_a = (da_a - da_a.mean()) / da_a.std()
+    # da_b = (da_b - da_b.mean()) / da_b.std()
 
     # Create weights based on the latitude.
     weights = np.cos(np.deg2rad(da_a.cf["latitude"]))
