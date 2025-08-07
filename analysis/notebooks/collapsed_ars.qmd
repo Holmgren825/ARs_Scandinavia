@@ -562,7 +562,6 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
         # proj_kw={"lon_0": 14, "lat_0": 65},
         proj=3 * ["lcc"],
         proj_kw={"central_longitude": 15},
-        abc=True,
         share=False,
     )
     (ar_ds.ar_tracked_id * 100).plot(
@@ -602,9 +601,6 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
             "AR precipitation fraction",
         ],
         suptitle=suptitle,
-        abcloc="ul",
-        abcbbox=True,
-        abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
     )
     return fig
 ```
