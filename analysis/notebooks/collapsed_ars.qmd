@@ -54,7 +54,17 @@ from xr_utils.coordinates import conv_lon_to_180
 ```
 
 ```{python}
-plt.rc["font.size"] = 7
+plt.rc.update(
+    {
+        "fontsize": 7,
+        "abc": "(a)",
+        "abcloc": "ul",
+        "abcbbox": False,
+        # "abc.bboxstyle": "square",
+        # "abc.bboxcolor": "white",
+        # "abc.bboxalpha": 1,
+    }
+)
 ```
 
 ```{python}
@@ -902,6 +912,7 @@ import scipy.stats as sc_stats
 ```
 
 #### Initial trend plot
+**Not used**
 
 ```{python}
 grid_spec = [[1, 2], [3, 3]]
@@ -957,6 +968,7 @@ fig.savefig("../../figures/ar_ann_avg_trends.svg")
 ```
 
 #### Alternative trends plot.
+**Not used**
 
 Correlation between AR freq. and total annual precip.
 
@@ -1148,6 +1160,7 @@ ar_trend_tot = ar_trend_tot.compute()
 ```
 
 ### Trends in number of AR timesteps
+**Used**
 
 ```{python}
 def get_unique(ds):
@@ -1165,7 +1178,7 @@ unique.to_pandas().median()
 ```
 
 ```{python}
-ar_ts_trend = ar_ts_ens.groupby(["valid_time.year", "ardt"]).count()  # / n_days * 100
+ar_ts_trend = ar_ts_ens.groupby(["valid_time.year", "ardt"]).count() / n_days * 100
 ```
 
 ```{python}
@@ -1208,10 +1221,10 @@ bar_ax.bar(
 )
 ax.legend(loc="b", ncols=4)
 ax.format(
-    suptitle="Total annual AR occurrence and average annual precipitation over Scandinavia",
+    suptitle="Total annual AR frequency and average annual precipitation over Scandinavia",
     title="",
     xlabel="Year",
-    ylabel="AR occurrence",
+    ylabel="AR frequency [%]",
 )
 ```
 
@@ -1407,6 +1420,18 @@ bins_avg_open = bins_avg.copy()
 bins_avg_open[-1] = bin_max.values
 ```
 
+```{python}
+bins_avg_open
+```
+
+Manually adjust the bins
+
+```{python}
+bins_avg = np.linspace(0, 1, 11)
+bins_avg_open = bins_avg.copy()
+bins_avg_open[-1] = 2
+```
+
 Histograms for the spatial average.
 
 ```{python}
@@ -1459,6 +1484,16 @@ Get the bin range for the histograms.
 bins_max = np.linspace(0, bin_threshold.values, n_bins + 1)
 bins_max_open = bins_max.copy()
 bins_max_open[-1] = bin_max.values
+bins_max_open
+```
+
+Manually adjust the bins
+
+```{python}
+bins_max = np.linspace(0, 30, n_bins + 1)
+bins_max_open = bins_max.copy()
+bins_max_open[-1] = 80
+bins_max_open
 ```
 
 ```{python}
@@ -1495,7 +1530,6 @@ fig, ax = plt.subplots(
     figheight="12cm",
     nrows=2,
     # figheight="12cm",
-    abc=True,
     sharex=False,
 )
 
@@ -1573,15 +1607,32 @@ ax.format(
     ylabelloc="l",
     title="Histogram of 1 hour precipitation",
 )
+ax[0].format(
+    xlocator=bins_avg[::2],
+    xlim=[0, 1],
+    xticklabels=["0", "0.2", "0.4", "0.6", "0.8", "$\geq$1"],
+)
+ax[0].format(
+    xminorlocator=bins_avg[1::2],
+)
+ax[1].format(
+    # xminorlocator=3,
+    xlocator=bins_max[::2],
+    xlim=[0, 30],
+    xticklabels=["0", "6", "12", "18", "24", "$\geq$30"],
+)
+
+ax[1].format(
+    xminorlocator=bins_max[1::2],
+)
+
 fig.legend(loc="b", ncols=3)
 
 ax.format(
     title="",
     suptitle="Histograms of 6-hourly total precipitation",
     rowlabels=["Spatial average", "Spatial max"],
-    abcloc="ur",
-    abcbbox=True,
-    abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
+    # abc_kw={"bbox": {"boxstyle": "square", "facecolor": "white"}},
 )
 ```
 
