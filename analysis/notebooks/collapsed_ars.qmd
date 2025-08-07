@@ -162,6 +162,10 @@ def get_cluster_timesteps(
 First we have to read in data with the original labels
 
 ```{python}
+pre_order_label_dict = {0: 3, 1: 1, 2: 2, 3: 0}
+```
+
+```{python}
 ar_ens_ds = []
 for ardt_name in tqdm(ARDT_NAMES):
     ar_path = os.path.join(
@@ -188,6 +192,8 @@ for ardt_name in tqdm(ARDT_NAMES):
     )
     start_times = pd.to_datetime(curr_times[:, 0], format="%Y%m%dT%H")
     labels = label_ds.labels.data
+    if ardt_name == "Mundhenk_v3":
+        labels = remap_labels(label_ds.labels.data, pre_order_label_dict)
 
     ar_ds = ar_ds.assign_coords({"start_time": ("sample_id", start_times)})
     ar_ds = ar_ds.assign_coords({"label": ("sample_id", labels)})
@@ -248,7 +254,7 @@ for ardt in range(1, 4):
                 sub_res[true_cluster] = test_cluster
         label_dict[ARDT_NAMES[ardt]] = sub_res
 
-label_dict["Mundhenk_v3"] = {val: val for val in range(5)}
+label_dict["Mundhenk_v3"] = pre_order_label_dict
 ```
 
 ```{python}
