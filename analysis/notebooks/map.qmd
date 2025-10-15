@@ -38,29 +38,6 @@ LON_SLICE = (-5, 40)
 ```
 
 ```{python}
-fig, ax = plt.subplots(
-    figwidth="10cm",
-    proj="lcc",
-    proj_kw={"central_longitude": 15},
-)
-
-scand_gdf.plot(ax=ax, transform=ccrs.PlateCarree(), edgecolor="C1", lw=1, color="C1", alpha=0.7, zorder=5)
-
-ax.format(
-    land=True,
-    coast=True,
-    reso="med",
-    landcolor="bisque",
-    facecolor="ocean blue",
-    latlabels=True,
-    lonlabels=True,
-    lonlim=LON_SLICE,
-    latlim=LAT_SLICE,
-    title="",
-)
-```
-
-```{python}
 from shapely.ops import unary_union
 ```
 
@@ -86,7 +63,81 @@ gpd.GeoSeries(
     shape.buffer(smoothing, join_style=join_style).buffer(
         un_smoothing, join_style=join_style
     )
-).boundary.plot(ax=ax, color="C1", zorder=5, transform=ccrs.PlateCarree(), label="Smoothed region")
+).boundary.plot(
+    ax=ax, color="C1", zorder=5, transform=ccrs.PlateCarree(), label="Smoothed region"
+)
+
+
+ax.annotate(
+    "Sweden",
+    (13, 62),
+    rotation=45,
+    xycoords="data",
+    transform=ccrs.PlateCarree(),
+)
+ax.annotate(
+    "Norway",
+    (6.5, 59),
+    rotation=45,
+    xycoords="data",
+    transform=ccrs.PlateCarree(),
+)
+ax.annotate(
+    "Finland",
+    (23, 62),
+    rotation=10,
+    xycoords="data",
+    transform=ccrs.PlateCarree(),
+)
+arrowprops = {"arrowstyle": "simple", "fc": "k", "ec": "white", "lw": 0.3}
+bbox = {"facecolor": "white", "alpha": 0.8}
+ax.annotate(
+    "Denmark",
+    (10, 56),
+    rotation=0,
+    xytext=(-1, 54),
+    xycoords="data",
+    transform=ccrs.PlateCarree(),
+    arrowprops=arrowprops,
+    zorder=5,
+    bbox=bbox,
+)
+
+ax.annotate(
+    "Skagerrak Strait",
+    (10, 58.5),
+    rotation=0,
+    xytext=(19, 54),
+    xycoords="data",
+    transform=ccrs.PlateCarree(),
+    arrowprops=arrowprops,
+    zorder=5,
+    bbox=bbox,
+)
+
+ax.annotate(
+    "Baltic Sea",
+    (20, 59),
+    rotation=0,
+    xytext=(25, 57.5),
+    xycoords="data",
+    transform=ccrs.PlateCarree(),
+    arrowprops=arrowprops,
+    zorder=5,
+    bbox=bbox,
+)
+
+ax.annotate(
+    "North Sea",
+    (2, 57.5),
+    rotation=0,
+    xytext=(-6, 62),
+    xycoords="data",
+    transform=ccrs.PlateCarree(),
+    arrowprops=arrowprops,
+    zorder=5,
+    bbox=bbox,
+)
 
 ax.legend(loc="ul", ncols=1)
 ax.format(
@@ -94,11 +145,12 @@ ax.format(
     coast=True,
     reso="hi",
     land=True,
+    borders=True,
     landcolor="bisque",
     facecolor="ocean blue",
     latlabels=True,
     lonlabels=True,
-    lonlim=(0, 32),
+    lonlim=(-4, 32),
     latlim=(52, 72),
     title="",
 )
