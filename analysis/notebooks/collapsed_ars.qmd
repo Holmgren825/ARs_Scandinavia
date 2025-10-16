@@ -564,7 +564,8 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
         proj_kw={"central_longitude": 15},
         share=False,
     )
-    (ar_ds.ar_tracked_id * 100).plot(
+    freq_data = ar_ds.ar_tracked_id * 100
+    freq_data.plot(
         ax=axs[0],
         vmin=0,
         cbar_kwargs={"label": "AR frequency [%]"},
@@ -579,7 +580,8 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
     # cm = ar_ann_avg.plot(ax=axs[1], vmin=0, vmax=vmax, cmap="oslor_r", add_colorbar=False)
     axs[1].colorbar(cm, label="Total annual average\nprecipitation [mm]")
 
-    (pr_ds / ann_avg_precip_ds * 100).plot(
+    pr_frac = pr_ds / ann_avg_precip_ds * 100
+    pr_frac.plot(
         ax=axs[2],
         vmin=0,
         cmap=cmap,
@@ -587,6 +589,16 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
         rasterized=True,
     )
 
+    for i, data in enumerate([freq_data, pr_ds, pr_frac]):
+        local_max = data.max().values
+        axs[i].annotate(
+            f"Max: {local_max:.1f}",
+            (1, 0),
+            xycoords="axes fraction",
+            bbox={"boxstyle": "square", "facecolor": "white"},
+            ha="right",
+            va="bottom",
+        )
     axs.format(
         coast=True,
         lonlabels=True,
@@ -1823,7 +1835,8 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
     vmax = ar_precip_ens_avg.tp.max().values
     cmap = plt.Colormap("oslo_r", right=0.8)
     for i in range(n_clusters):
-        cm = (ar_freqs.isel(label=i).ar_tracked_id * 100).plot(
+        freq_data = ar_freqs.isel(label=i).ar_tracked_id * 100
+        cm = freq_data.plot(
             ax=axs[i, 0],
             vmin=0,
             rasterized=True,
@@ -1837,8 +1850,8 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
             # locator="multiple",
             # locator_kw={"base": 0.5},
         )
-        curr_tp = ar_pr.isel(label=i).tp
-        cm = (curr_tp / ann_avg_precip_ds * 100).plot(
+        curr_tp = ar_pr.isel(label=i).tp / ann_avg_precip_ds * 100
+        cm = curr_tp.plot(
             ax=axs[i, 1],
             vmin=0,
             # vmax=16,
@@ -1852,6 +1865,17 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
         if i == 3:
             axs[i, 0].format(latlabels=True, lonlabels=True)
             axs[i, 1].format(lonlabels=True)
+            
+        for j, data in enumerate([freq_data, curr_tp]):
+            local_max = data.max().values
+            axs[i, j].annotate(
+                f"Max: {local_max:.1f}",
+                (1, 0),
+                xycoords="axes fraction",
+                bbox={"boxstyle": "square", "facecolor": "white"},
+                ha="right",
+                va="bottom",
+            )
 
     axs.format(
         coast=True,
@@ -2429,10 +2453,9 @@ def season_cluster_plot(freqs, suptitle):
     for i in range(nrows):
         vmax = freqs.isel(label=i).ar_tracked_id.max().values
         for j, season in enumerate(season_order):
+            data = freqs.isel(label=i).sel(season=season).ar_tracked_id
             cm = (
-                freqs.isel(label=i)
-                .sel(season=season)
-                .ar_tracked_id.plot(
+                data.plot(
                     ax=axs[i, j],
                     rasterized=True,
                     vmin=0,
@@ -2440,6 +2463,15 @@ def season_cluster_plot(freqs, suptitle):
                     add_colorbar=False,
                     cmap="bamako",
                 )
+            )
+            local_max = data.max().values
+            axs[i, j].annotate(
+                f"Max: {local_max:.1f}",
+                (1, 0),
+                xycoords="axes fraction",
+                bbox={"boxstyle": "square", "facecolor": "white"},
+                ha="right",
+                va="bottom",
             )
 
         fig.colorbar(
@@ -2805,4 +2837,3 @@ fig = nao_dist_plot(
 ```{python}
 fig.savefig("../../figures/nao_ar_freq_distributions_ens_max.svg")
 ```
-
