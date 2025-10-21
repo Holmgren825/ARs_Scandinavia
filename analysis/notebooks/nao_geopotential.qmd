@@ -10,6 +10,7 @@ jupyter:
     display_name: ar_ident
     language: python
     name: ar_ident
+title: Skip this.
 ---
 
 ```{python}
@@ -37,6 +38,8 @@ plt.rc.update(
 client = Client()
 ```
 
+
+
 ```{python}
 ds = xr.open_mfdataset("/data/era5/geopotential/geopotential-*.nc")
 ```
@@ -59,6 +62,8 @@ for i in tqdm(range(1979, 2016, 6)):
             append_dim="valid_time",
         )
 ```
+
+# Start here ususally
 
 ```{python}
 daily_mean_ds = xr.open_zarr(
@@ -110,9 +115,9 @@ from xarray.groupers import BinGrouper
 ```{python}
 nao_bins = IntervalIndex(
     [
-        Interval(-3.5, -1.5, "right"),
-        Interval(-1.5, -0.5, "right"),
-        Interval(-0.5, 0.5, "right"),
+        Interval(-3.501, -1.501, "right"),
+        Interval(-1.501, -0.501, "right"),
+        Interval(-0.501, 0.5, "right"),
         Interval(0.5, 1.5, "right"),
         Interval(1.5, 3.5, "right"),
     ],
@@ -154,6 +159,14 @@ gridspec = [
     [4, 4, 5, 5],
 ]
 
+bin_labels = [
+    "[-3.5, -1.5)",
+    "[-1.5, -0.5)",
+    "[-0.5, 0.5]",
+    "(0.5, 1.5]",
+    "(1.5, 3.5]",
+]
+
 fig, ax = plt.subplots(
     # ncols=2,
     # nrows=2,
@@ -188,7 +201,7 @@ for i in range(5):
    )
    # ax[i].clabel(cs, cs.levels, fontsize=7)
    ax[i].format(
-       title=f"Bin: {data.nao_bins.values}, n: {counts.z.isel(nao_bins=i).values:.0f}",
+       title=f"Bin: {bin_labels[i]}, n: {counts.z.isel(nao_bins=i).values:.0f}",
    )
 
 fig.colorbar(cm, label="Geopotential height [dm]", rasterized=True)
@@ -208,7 +221,6 @@ ax.format(
     #rowlabels=["Negative", "Neutral", "Positive"],
 )
 ```
-
 
 ```{python}
 fig.savefig("../../figures/nao_geop_new_bins.svg")

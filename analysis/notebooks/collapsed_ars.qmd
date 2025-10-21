@@ -2581,21 +2581,25 @@ def get_nao_bins(nao_series: pd.Series, midpoint_qtile: float = 0.5) -> np.ndarr
 ```
 
 ```{python}
+from pandas.gro
+```
+
+```{python}
 nao_series = prepare_nao_ds(path="../etc/norm_daily_nao_index_1950_2024.txt")
 nao_series = nao_series.loc["1980":"2019"]
 nao_da = xr.DataArray(nao_series)
 # nao_bins = get_nao_bins(nao_series)
 # nao_bins = (-3.5, -0.5, 0, 0.5, 3.5)
-nao_bins = [
-    -3.5,
-    -1.5,
-    -0.5,
-    0.5,
-    1.5,
-    3.5,
-]
+nao_bins = IntervalIndex(
+    [
+    Interval(-3.501, -1.501),
+    Interval(-1.501, -0.501),
+    Interval(-0.501, 0.5),
+    Interval(0.5, 1.5),
+    Interval(1.5, 3.5),
+])
 
-hist, bins = np.histogram(nao_series, nao_bins)
+#hist, bins = nao_series.groupby(nao_bins)
 ```
 
 NAO seasonal plot.
@@ -2626,6 +2630,7 @@ and assign them as coordinate to the ar ensemble
 
 ```{python}
 ar_ens_ds = ar_ens_ds.assign_coords({"nao": ar_nao_values})
+precip_ds_nao = precip_ds.assign_coords({"nao": nao_da})
 ```
 
 Groupby both nao and the cluster label.
@@ -2638,29 +2643,29 @@ from xarray.groupers import BinGrouper, TimeResampler, UniqueGrouper
 ar_nao_groups = ar_ens_ds.groupby(
     nao=BinGrouper(nao_bins), label=UniqueGrouper(), ardt=UniqueGrouper()
 ).sum()
+
+ar_nao_groups_counts = precip_ds_nao.time.groupby(
+    nao=BinGrouper(nao_bins)
+).count()
 ```
 
 ```{python}
-ar_nao_groups
+ar_nao_groups_counts = ar_nao_groups_counts.compute()
 ```
 
 ```{python}
 # Reshape for broadcasting
-nao_counts = hist.reshape((1, 1, -1, 1, 1))
+nao_counts = ar_nao_groups_counts.values.reshape((1, 1, -1, 1, 1))
 ```
 
 Calculate the frequencies
 
 ```{python}
-freqs = ar_nao_groups / nao_counts * 100
+freqs = ar_nao_groups / ar_nao_groups_counts * 100
 ```
 
 ```{python}
 freqs = freqs.compute()
-```
-
-```{python}
-freqs
 ```
 
 ```{python}
@@ -2711,6 +2716,13 @@ def nao_cluster_plot(freqs, suptitle):
         # rows=(i+1, i+1),
         rasterized=True,
     )
+    bin_labels = [
+        "[-3.5, -1.5)",
+        "[-1.5, -0.5)",
+        "[-0.5, 0.5]",
+        "(0.5, 1.5]",
+        "(1.5, 3.5]",
+    ]
 
     axs.format(
         coast=True,
@@ -2719,7 +2731,7 @@ def nao_cluster_plot(freqs, suptitle):
         latlim=LAT_SLICE,
         title="",
         rowlabels=[f"AR Pathway {i}" for i in range(1, n_clusters + 1)],
-        collabels=[f"{bin}" for bin in freqs.nao_bins.values],
+        collabels=[f"{bin}" for bin in bin_labels],
         toplabelpad=0,
         suptitle=suptitle,
     )
@@ -2818,9 +2830,17 @@ def nao_dist_plot(freqs: xr.Dataset, title: str):
     
     ax[0].format(ylabel="AR frequency [%]")
     ax[1].format(ylabel="Mean\nWasserstein distance")
+    
+    bin_labels = [
+        "[-3.5, -1.5)",
+        "[-1.5, -0.5)",
+        "[-0.5, 0.5]",
+        "(0.5, 1.5]",
+        "(1.5, 3.5]",
+    ]
     ax.format(
         xticks=np.arange(0.75, 11.5, 2.5),
-        xticklabels=[f"{bin}" for bin in freqs.nao_bins.values],
+        xticklabels=[f"{bin}" for bin in bin_labels],
         xlabel="NAO phase group",
         suptitle=title,
     )
@@ -2857,3 +2877,4 @@ fig = nao_dist_plot(
 ```{python}
 fig.savefig("../../figures/nao_ar_freq_distributions_ens_max.svg")
 ```
+
