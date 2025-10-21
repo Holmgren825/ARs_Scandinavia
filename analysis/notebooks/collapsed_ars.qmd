@@ -1865,7 +1865,7 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
         if i == 3:
             axs[i, 0].format(latlabels=True, lonlabels=True)
             axs[i, 1].format(lonlabels=True)
-            
+
         for j, data in enumerate([freq_data, curr_tp]):
             local_max = data.max().values
             axs[i, j].annotate(
@@ -2454,15 +2454,13 @@ def season_cluster_plot(freqs, suptitle):
         vmax = freqs.isel(label=i).ar_tracked_id.max().values
         for j, season in enumerate(season_order):
             data = freqs.isel(label=i).sel(season=season).ar_tracked_id
-            cm = (
-                data.plot(
-                    ax=axs[i, j],
-                    rasterized=True,
-                    vmin=0,
-                    vmax=vmax,
-                    add_colorbar=False,
-                    cmap="bamako",
-                )
+            cm = data.plot(
+                ax=axs[i, j],
+                rasterized=True,
+                vmin=0,
+                vmax=vmax,
+                add_colorbar=False,
+                cmap="bamako",
             )
             local_max = data.max().values
             axs[i, j].annotate(
@@ -2530,6 +2528,10 @@ fig.savefig("../../figures/seasonal_ar_clusters_ens_min.svg")
 ## Cluster grouped by NAO
 
 ```{python}
+from pandas import Interval, IntervalIndex
+```
+
+```{python}
 def prepare_nao_ds(path: str | None = None) -> pd.Series:
     """Prepare NAO dataframe."""
     if path is None:
@@ -2583,7 +2585,15 @@ nao_series = prepare_nao_ds(path="../etc/norm_daily_nao_index_1950_2024.txt")
 nao_series = nao_series.loc["1980":"2019"]
 nao_da = xr.DataArray(nao_series)
 # nao_bins = get_nao_bins(nao_series)
-nao_bins = (-3.5, -0.5, 0, 0.5, 3.5)
+# nao_bins = (-3.5, -0.5, 0, 0.5, 3.5)
+nao_bins = [
+    -3.5,
+    -1.5,
+    -0.5,
+    0.5,
+    1.5,
+    3.5,
+]
 
 hist, bins = np.histogram(nao_series, nao_bins)
 ```
@@ -2631,8 +2641,12 @@ ar_nao_groups = ar_ens_ds.groupby(
 ```
 
 ```{python}
+ar_nao_groups
+```
+
+```{python}
 # Reshape for broadcasting
-nao_counts = hist.reshape((1, 1, -1, 1))
+nao_counts = hist.reshape((1, 1, -1, 1, 1))
 ```
 
 Calculate the frequencies
@@ -2646,10 +2660,14 @@ freqs = freqs.compute()
 ```
 
 ```{python}
+freqs
+```
+
+```{python}
 def nao_cluster_plot(freqs, suptitle):
     n_clusters = freqs.label.shape[0]
     nrows = n_clusters
-    ncols = 4
+    ncols = 5
     fig, axs = plt.subplots(
         figwidth="12cm",
         nrows=nrows,
@@ -2664,7 +2682,7 @@ def nao_cluster_plot(freqs, suptitle):
     # print(vmax)
 
     for i in range(nrows):
-        for j in range(4):
+        for j in range(5):
             data = freqs.isel(label=i, nao_bins=j).ar_tracked_id
             cm = data.plot(
                 ax=axs[i, j],
@@ -2689,7 +2707,7 @@ def nao_cluster_plot(freqs, suptitle):
         width=0.1,
         extend="max",
         loc="b",
-        span=(2, 3),
+        span=(2, 4),
         # rows=(i+1, i+1),
         rasterized=True,
     )
@@ -2743,16 +2761,16 @@ import scipy.stats as scstats
 ```
 
 ```{python}
-res = np.zeros((4, 4))
+res = np.zeros((4, 5))
 for cluster in range(4):
-    for nao in range(4):
+    for nao in range(5):
         data_curr = (
             freqs.isel(label=cluster, nao_bins=nao)
             .ar_tracked_id.median("ardt")
             .values.flatten()
         )
-        res_inner = np.zeros(4)
-        for nao_2 in range(4):
+        res_inner = np.zeros(5)
+        for nao_2 in range(5):
             data_cand = (
                 freqs.isel(label=cluster, nao_bins=nao_2)
                 .ar_tracked_id.median("ardt")
@@ -2766,14 +2784,14 @@ res
 ```{python}
 def nao_dist_plot(freqs: xr.Dataset, title: str):
 
-    res = np.zeros((4, 4))
+    res = np.zeros((4, 5))
     for cluster in range(4):
-        for nao in range(4):
+        for nao in range(5):
             data_curr = freqs.isel(
                 label=cluster, nao_bins=nao
             ).ar_tracked_id.values.flatten()
-            res_inner = np.zeros(4)
-            for nao_2 in range(4):
+            res_inner = np.zeros(5)
+            for nao_2 in range(5):
                 data_cand = freqs.isel(
                     label=cluster, nao_bins=nao_2
                 ).ar_tracked_id.values.flatten()
@@ -2783,7 +2801,7 @@ def nao_dist_plot(freqs: xr.Dataset, title: str):
     fig, ax = plt.subplots(figwidth="8.5cm", sharey=False, hratios=(0.7, 0.3), nrows=2)
 
     for i in range(4):
-        for j in range(4):
+        for j in range(5):
             data = freqs.isel(label=i, nao_bins=j).ar_tracked_id
             data = data.fillna(0)
             x = (2.5 * j) + (0.5 * i)
@@ -2792,14 +2810,16 @@ def nao_dist_plot(freqs: xr.Dataset, title: str):
             )
 
     for i in range(4):
-        ax[1].plot(np.arange(0.75, 9, 2.5), res[i], label=f"AR Pathway {i+1}")
+        ax[1].plot(np.arange(0.75, 11.5, 2.5), res[i], label=f"AR Pathway {i+1}")
 
     handles, labels = ax[0].get_legend_handles_labels()
-    fig.legend(handles[::4], labels[::4], ncols=2, loc="b")
+    
+    fig.legend(handles[::5], labels[::5], ncols=2, loc="b")
+    
     ax[0].format(ylabel="AR frequency [%]")
     ax[1].format(ylabel="Mean\nWasserstein distance")
     ax.format(
-        xticks=np.arange(0.75, 9, 2.5),
+        xticks=np.arange(0.75, 11.5, 2.5),
         xticklabels=[f"{bin}" for bin in freqs.nao_bins.values],
         xlabel="NAO phase group",
         suptitle=title,
