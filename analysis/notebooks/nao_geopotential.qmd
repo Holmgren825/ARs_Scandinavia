@@ -1,0 +1,215 @@
+---
+jupyter:
+  jupytext:
+    text_representation:
+      extension: .qmd
+      format_name: quarto
+      format_version: '1.0'
+      jupytext_version: 1.16.4
+  kernelspec:
+    display_name: ar_ident
+    language: python
+    name: ar_ident
+---
+
+```{python}
+import dask
+import numpy as np
+import pandas as pd
+import ultraplot as plt
+import xarray as xr
+from distributed import Client
+from tqdm import tqdm
+```
+
+```{python}
+plt.rc.update(
+    {
+        "fontsize": 7,
+        "abc": "(a)",
+        "abcloc": "l",
+        "abcbbox": False,
+    }
+)
+```
+
+```{python}
+client = Client()
+```
+
+```{python}
+ds = xr.open_mfdataset("/data/era5/geopotential/geopotential-*.nc")
+```
+
+```{python}
+# INFO: Only run if this is this is the first time.
+for i in tqdm(range(1979, 2016, 6)):
+    # print(i, i+5)
+    ds_sel = ds.sel(valid_time=slice(f"{i}", f"{i+5}"))
+    daily_mean_ds = ds_sel.resample(valid_time="1D").mean().chunk(valid_time=2192)
+    if i == 1979:
+        daily_mean_ds.to_zarr(
+            # Run with mode "w" if we want to re run. Otherwise this will throw an error.
+            "/data/era5/geopotential/geopotential-daiy_mean-1979_2020.zarr/",  # mode="w"
+        )
+    else:
+        daily_mean_ds.to_zarr(
+            "/data/era5/geopotential/geopotential-daiy_mean-1979_2020.zarr/",
+            mode="a",
+            append_dim="valid_time",
+        )
+```
+
+```{python}
+daily_mean_ds = xr.open_zarr(
+    "/data/era5/geopotential/geopotential-daiy_mean-1979_2020.zarr/"
+)
+```
+
+```{python}
+def prepare_nao_ds(path: str | None = None) -> pd.Series:
+    """Prepare NAO dataframe."""
+    if path is None:
+        path = Path(__file__).parent / "../etc/norm_daily_nao_index_1950_2024.txt"
+
+    nao_df: pd.DataFrame = pd.read_csv(
+        filepath_or_buffer=path,
+        sep=r"\s+",
+        header=None,
+        names=["year", "month", "day", "nao"],
+        dtype={"year": str, "month": str, "day": str, "nao": float},
+        na_values="-99.0",
+    )
+    nao_df["time"] = pd.to_datetime(
+        nao_df["year"] + "-" + nao_df["month"] + "-" + nao_df["day"]
+    )
+    nao_df.index = pd.Index(nao_df.time)
+    nao_series = nao_df["nao"]
+    nao_series = nao_series.interpolate()
+    return nao_series
+```
+
+```{python}
+nao_series = prepare_nao_ds(path="../etc/norm_daily_nao_index_1950_2024.txt")
+nao_series = nao_series.loc["1979":"2020"]
+```
+
+```{python}
+daily_mean_ds = daily_mean_ds.assign_coords({"nao": ("valid_time", nao_series)})
+```
+
+```{python}
+nao_bins = (-3.5, -2, -0.5, 0.5, 2, 3.5)
+```
+
+```{python}
+from pandas import Interval, IntervalIndex
+from xarray.groupers import BinGrouper
+```
+
+```{python}
+nao_bins = IntervalIndex(
+    [
+        Interval(-3.5, -1.5, "right"),
+        Interval(-1.5, -0.5, "right"),
+        Interval(-0.5, 0.5, "right"),
+        Interval(0.5, 1.5, "right"),
+        Interval(1.5, 3.5, "right"),
+    ],
+)
+```
+
+```{python}
+nao_bins.is_overlapping
+```
+
+```{python}
+counts = daily_mean_ds.groupby(nao=BinGrouper(nao_bins)).count().compute()
+```
+
+```{python}
+np.unique(counts.z.isel(nao_bins=4, pressure_level=0))
+```
+
+```{python}
+counts = counts.max(["latitude", "longitude"]).isel(pressure_level=0)
+```
+
+```{python}
+nao_geop = daily_mean_ds.groupby(nao=BinGrouper(nao_bins)).mean().isel(pressure_level=0)
+```
+
+```{python}
+nao_geop = nao_geop.compute()
+```
+
+```{python}
+nao_geop
+```
+
+```{python}
+gridspec = [
+    [1, 1, 2, 2],
+    [None, 3, 3, None],
+    [4, 4, 5, 5],
+]
+
+fig, ax = plt.subplots(
+    # ncols=2,
+    # nrows=2,
+    gridspec,
+    proj="lcc",
+    figwidth="12cm",
+    proj_kw={"central_longitude": 15},
+    share=False,
+)
+
+
+vmin = np.round(nao_geop.z.min().values / 98.2)
+vmax = np.round(nao_geop.z.max().values / 98.2)
+vmin = 500
+vmax = 590
+
+cmap = plt.Colormap("batlow")
+norm = plt.DivergingNorm(vcenter=500, vmin=vmin, vmax=vmax)
+
+for i in range(5):
+   data = nao_geop.isel(nao_bins=i).z / 98.2
+   cm = (data).plot.contourf(
+       ax=ax[i],
+       levels=10,
+       lw=0.7,
+       vmin=vmin,
+       vmax=vmax,
+       add_colorbar=False,
+       cmap=cmap,
+       rasterized=True,
+       # norm=norm,
+   )
+   # ax[i].clabel(cs, cs.levels, fontsize=7)
+   ax[i].format(
+       title=f"Bin: {data.nao_bins.values}, n: {counts.z.isel(nao_bins=i).values:.0f}",
+   )
+
+fig.colorbar(cm, label="Geopotential height [dm]", rasterized=True)
+fig.text(
+    0.06,
+    0.473,
+    "Neutral",
+    {"rotation": 90, "weight": "bold", "va": "center", "ha": "center", "color": "black"},
+)
+ax.format(
+    coast=True,
+    reso="med",
+    latlim=(30, 90),
+    lonlim=(-70, 70),
+    suptitle="Daily average geopotential height at 500 hPa grouped by NAO-phase",
+    rowlabels=["Negative", "Positive"],
+    #rowlabels=["Negative", "Neutral", "Positive"],
+)
+```
+
+
+```{python}
+fig.savefig("../../figures/nao_geop_new_bins.svg")
+```
