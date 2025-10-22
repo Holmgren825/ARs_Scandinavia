@@ -10,7 +10,7 @@ jupyter:
     display_name: ar_ident
     language: python
     name: ar_ident
-title: Skip this.
+title: Geopotential maps
 ---
 
 ```{python}
@@ -38,7 +38,7 @@ plt.rc.update(
 client = Client()
 ```
 
-
+# Skip this
 
 ```{python}
 ds = xr.open_mfdataset("/data/era5/geopotential/geopotential-*.nc")
@@ -125,10 +125,6 @@ nao_bins = IntervalIndex(
 ```
 
 ```{python}
-nao_bins.is_overlapping
-```
-
-```{python}
 counts = daily_mean_ds.groupby(nao=BinGrouper(nao_bins)).count().compute()
 ```
 
@@ -146,10 +142,6 @@ nao_geop = daily_mean_ds.groupby(nao=BinGrouper(nao_bins)).mean().isel(pressure_
 
 ```{python}
 nao_geop = nao_geop.compute()
-```
-
-```{python}
-nao_geop
 ```
 
 ```{python}
@@ -180,6 +172,7 @@ fig, ax = plt.subplots(
 
 vmin = np.round(nao_geop.z.min().values / 98.2)
 vmax = np.round(nao_geop.z.max().values / 98.2)
+print(vmin, vmax)
 vmin = 500
 vmax = 590
 

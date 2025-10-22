@@ -2877,4 +2877,3 @@ fig = nao_dist_plot(
 ```{python}
 fig.savefig("../../figures/nao_ar_freq_distributions_ens_max.svg")
 ```
-
