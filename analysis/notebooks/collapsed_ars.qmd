@@ -565,25 +565,32 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
         share=False,
     )
     freq_data = ar_ds.ar_tracked_id * 100
+    vmax = np.ceil(freq_data.max().values)
     freq_data.plot(
         ax=axs[0],
         vmin=0,
+        vmax=vmax,
+        levels=11,
         cbar_kwargs={"label": "AR frequency [%]"},
         rasterized=True,
-        cmap="bamako",
+        cmap=plt.Colormap("bamako"),
     )
     # vmax = max(n_ar_ann_avg.max().values, ar_ann_avg.max().values)
+    vmax = np.ceil(pr_ds.max().values)
     cmap = plt.Colormap("oslo_r", right=0.8)
     cm = pr_ds.plot(
-        ax=axs[1], vmin=0, cmap=cmap, add_colorbar=False, rasterized=True, robust=False
+        ax=axs[1], vmin=0, vmax=vmax, levels=11, cmap=cmap, add_colorbar=False, rasterized=True, robust=False
     )
     # cm = ar_ann_avg.plot(ax=axs[1], vmin=0, vmax=vmax, cmap="oslor_r", add_colorbar=False)
     axs[1].colorbar(cm, label="Total annual average\nprecipitation [mm]")
 
     pr_frac = pr_ds / ann_avg_precip_ds * 100
+    vmax = np.ceil(pr_frac.max().values)
     pr_frac.plot(
         ax=axs[2],
         vmin=0,
+        vmax=vmax,
+        levels=11,
         cmap=cmap,
         cbar_kwargs={"label": "Total precipitation\nfraction [%]"},
         rasterized=True,
@@ -1832,16 +1839,16 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
         proj_kw={"central_longitude": 15},
         share=False,
     )
-    vmax = ar_precip_ens_avg.tp.max().values
+    #vmax = ar_precip_ens_avg.tp.max().values
     cmap = plt.Colormap("oslo_r", right=0.8)
     for i in range(n_clusters):
         freq_data = ar_freqs.isel(label=i).ar_tracked_id * 100
-        cm = freq_data.plot(
+        cm = freq_data.plot.pcolormesh(
             ax=axs[i, 0],
             vmin=0,
             rasterized=True,
             add_colorbar=False,
-            cmap="bamako",
+            cmap=plt.Colormap("bamako"),
         )
         axs[i, 0].colorbar(
             cm,
@@ -1849,18 +1856,18 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
             width=0.15,
             # locator="multiple",
             # locator_kw={"base": 0.5},
+            extend="max"
         )
         curr_tp = ar_pr.isel(label=i).tp / ann_avg_precip_ds * 100
-        cm = curr_tp.plot(
+        cm = curr_tp.plot.pcolormesh(
             ax=axs[i, 1],
             vmin=0,
-            # vmax=16,
             cmap=cmap,
             rasterized=True,
             add_colorbar=False,
             # cbar_kwargs={"label": "Total precipitation\nfraction [%]"},
         )
-        axs[i, 1].colorbar(cm, label="Total precipitation\nfraction [%]", width=0.15)
+        axs[i, 1].colorbar(cm, label="Total precipitation\nfraction [%]", width=0.15,  extend="max")
         axs[i, 0].format(latlabels=True)
         if i == 3:
             axs[i, 0].format(latlabels=True, lonlabels=True)
@@ -1883,7 +1890,7 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
         lonlim=LON_SLICE,
         latlim=LAT_SLICE,
         title="",
-        rowlabels=[f"AR Pathway {i}" for i in range(1, n_clusters + 1)],
+        rowlabels=[f"AR pathway {i}" for i in range(1, n_clusters + 1)],
         collabels=["AR frequency", "Total precipitation fraction"],
         suptitle=suptitle,
     )
@@ -1894,7 +1901,7 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
 fig = ar_cluster_plot(
     grouped_ars.median("ardt"),
     ar_precip_ens_avg.median("ardt"),
-    "AR Pathways [Ensemble median]",
+    "AR pathways [Ensemble median]",
 )
 ```
 
@@ -1981,7 +1988,7 @@ This should be equal the corresponding test for [AR precipitation](#AR-precipita
 fig = ar_cluster_plot(
     grouped_ars.max("ardt"),
     ar_precip_ens_avg.max("ardt"),
-    "AR Pathways [Ensemble max]",
+    "AR pathways [Ensemble max]",
 )
 ```
 
@@ -1993,7 +2000,7 @@ fig.savefig("../../figures/ann_avg_ar_pr_clusters_ens_max.svg")
 fig = ar_cluster_plot(
     grouped_ars.min("ardt"),
     ar_precip_ens_avg.min("ardt"),
-    "AR Pathways [Ensemble min]",
+    "AR pathways [Ensemble min]",
 )
 ```
 
@@ -2204,7 +2211,7 @@ ax.format(
     title="",
     xlabel="Month",
     ylabel="Total AR frequency [%]",
-    rowlabels=[f"AR Pathway {i}" for i in range(1, n_clusters + 1)],
+    rowlabels=[f"AR pathway {i}" for i in range(1, n_clusters + 1)],
     suptitle="Average AR seasonal cycle",
     xlocator=range(1, 13),
     # xtickminor=False,
@@ -2478,7 +2485,8 @@ def season_cluster_plot(freqs, suptitle):
             # span=(2, 3),
             label="Frequency [%]",
             width=0.1,
-            # extend="max",
+            extend="max",
+            extendsize=0.8,
             loc="r",
             rasterized=True,
         )
@@ -2489,7 +2497,7 @@ def season_cluster_plot(freqs, suptitle):
         lonlim=LON_SLICE,
         latlim=LAT_SLICE,
         title="",
-        rowlabels=[f"AR Pathway {i}" for i in range(1, n_clusters + 1)],
+        rowlabels=[f"AR pathway {i}" for i in range(1, n_clusters + 1)],
         toplabels=season_order,
         toplabelpad=-1,
         suptitle=suptitle,
@@ -2578,10 +2586,6 @@ def get_nao_bins(nao_series: pd.Series, midpoint_qtile: float = 0.5) -> np.ndarr
         ],
     )
     return bins
-```
-
-```{python}
-from pandas.gro
 ```
 
 ```{python}
@@ -2717,11 +2721,11 @@ def nao_cluster_plot(freqs, suptitle):
         rasterized=True,
     )
     bin_labels = [
-        "[-3.5, -1.5)",
-        "[-1.5, -0.5)",
-        "[-0.5, 0.5]",
-        "(0.5, 1.5]",
-        "(1.5, 3.5]",
+        "NAO$\\mathbf{<-1.5}$",
+        "$\\mathbf{-1.5\\leq}$NAO$\\mathbf{<-0.5}$",
+        "$\\mathbf{-0.5\\leq}$NAO$\\mathbf{\\leq 0.5}$",
+        "$\\mathbf{0.5 <}$NAO$\\mathbf{\\leq 1.5}$",
+        "$\\mathbf{1.5<}$NAO",
     ]
 
     axs.format(
@@ -2730,7 +2734,7 @@ def nao_cluster_plot(freqs, suptitle):
         lonlim=LON_SLICE,
         latlim=LAT_SLICE,
         title="",
-        rowlabels=[f"AR Pathway {i}" for i in range(1, n_clusters + 1)],
+        rowlabels=[f"AR pathway {i}" for i in range(1, n_clusters + 1)],
         collabels=[f"{bin}" for bin in bin_labels],
         toplabelpad=0,
         suptitle=suptitle,
@@ -2818,11 +2822,11 @@ def nao_dist_plot(freqs: xr.Dataset, title: str):
             data = data.fillna(0)
             x = (2.5 * j) + (0.5 * i)
             parts = ax[0].violin(
-                x, data.values.flatten(), fc=f"C{i}", label=f"AR Pathway {i+1}"
+                x, data.values.flatten(), fc=f"C{i}", label=f"AR pathway {i+1}"
             )
 
     for i in range(4):
-        ax[1].plot(np.arange(0.75, 11.5, 2.5), res[i], label=f"AR Pathway {i+1}")
+        ax[1].plot(np.arange(0.75, 11.5, 2.5), res[i], label=f"AR pathway {i+1}")
 
     handles, labels = ax[0].get_legend_handles_labels()
     
@@ -2832,15 +2836,16 @@ def nao_dist_plot(freqs: xr.Dataset, title: str):
     ax[1].format(ylabel="Mean\nWasserstein distance")
     
     bin_labels = [
-        "[-3.5, -1.5)",
-        "[-1.5, -0.5)",
-        "[-0.5, 0.5]",
-        "(0.5, 1.5]",
-        "(1.5, 3.5]",
+        "NAO$<-1.5$",
+        "$-1.5\\leq$NAO$<-0.5$",
+        "$-0.5\\leq$NAO$\\leq 0.5$",
+        "$0.5 <$NAO$\\leq 1.5$",
+        "$1.5<$NAO",
     ]
     ax.format(
         xticks=np.arange(0.75, 11.5, 2.5),
         xticklabels=[f"{bin}" for bin in bin_labels],
+        xrotation=20,
         xlabel="NAO phase group",
         suptitle=title,
     )
@@ -2877,3 +2882,4 @@ fig = nao_dist_plot(
 ```{python}
 fig.savefig("../../figures/nao_ar_freq_distributions_ens_max.svg")
 ```
+
