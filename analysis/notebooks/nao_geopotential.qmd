@@ -152,11 +152,11 @@ gridspec = [
 ]
 
 bin_labels = [
-    "[-3.5, -1.5)",
-    "[-1.5, -0.5)",
-    "[-0.5, 0.5]",
-    "(0.5, 1.5]",
-    "(1.5, 3.5]",
+    "NAO$<-1.5$",
+    "$-1.5\\leq$NAO$<-0.5$",
+    "$-0.5\\leq$NAO$\\leq 0.5$",
+    "$0.5 <$NAO$\\leq 1.5$",
+    "$1.5<$NAO",
 ]
 
 fig, ax = plt.subplots(
@@ -180,29 +180,35 @@ cmap = plt.Colormap("batlow")
 norm = plt.DivergingNorm(vcenter=500, vmin=vmin, vmax=vmax)
 
 for i in range(5):
-   data = nao_geop.isel(nao_bins=i).z / 98.2
-   cm = (data).plot.contourf(
-       ax=ax[i],
-       levels=10,
-       lw=0.7,
-       vmin=vmin,
-       vmax=vmax,
-       add_colorbar=False,
-       cmap=cmap,
-       rasterized=True,
-       # norm=norm,
-   )
-   # ax[i].clabel(cs, cs.levels, fontsize=7)
-   ax[i].format(
-       title=f"Bin: {bin_labels[i]}, n: {counts.z.isel(nao_bins=i).values:.0f}",
-   )
+    data = nao_geop.isel(nao_bins=i).z / 98.2
+    cm = (data).plot.contourf(
+        ax=ax[i],
+        levels=10,
+        lw=0.7,
+        vmin=vmin,
+        vmax=vmax,
+        add_colorbar=False,
+        cmap=cmap,
+        rasterized=True,
+        # norm=norm,
+    )
+    # ax[i].clabel(cs, cs.levels, fontsize=7)
+    ax[i].format(
+        title=f"{bin_labels[i]}, n: {counts.z.isel(nao_bins=i).values:.0f}",
+    )
 
 fig.colorbar(cm, label="Geopotential height [dm]", rasterized=True)
 fig.text(
     0.06,
     0.473,
     "Neutral",
-    {"rotation": 90, "weight": "bold", "va": "center", "ha": "center", "color": "black"},
+    {
+        "rotation": 90,
+        "weight": "bold",
+        "va": "center",
+        "ha": "center",
+        "color": "black",
+    },
 )
 ax.format(
     coast=True,
@@ -211,10 +217,76 @@ ax.format(
     lonlim=(-70, 70),
     suptitle="Daily average geopotential height at 500 hPa grouped by NAO-phase",
     rowlabels=["Negative", "Positive"],
-    #rowlabels=["Negative", "Neutral", "Positive"],
+    # rowlabels=["Negative", "Neutral", "Positive"],
 )
 ```
 
 ```{python}
 fig.savefig("../../figures/nao_geop_new_bins.svg")
+```
+
+## Anomalies
+
+```{python}
+nao_geop_anom = (
+    (daily_mean_ds - daily_mean_ds.mean("valid_time"))
+    .groupby(nao=BinGrouper(nao_bins))
+    .mean()
+    .isel(pressure_level=0)
+)
+```
+
+```{python}
+nao_geop_anom = nao_geop_anom.compute()
+```
+
+```{python}
+fig, ax = plt.subplots(
+    ncols=5,
+    proj="lcc",
+    figwidth="12cm",
+    proj_kw={"central_longitude": 15},
+    share=False,
+)
+
+vmin = np.round(nao_geop_anom.z.min().values / 98.2)
+vmax = np.round(nao_geop_anom.z.max().values / 98.2)
+print(vmin, vmax)
+vmin = -26
+vmax = 26
+
+cmap = plt.Colormap("vik")
+norm = plt.DivergingNorm(vcenter=0, vmin=vmin, vmax=vmax)
+for i in range(5):
+    data = nao_geop.isel(nao_bins=i).z / 98.2
+    cm = (data).plot.contourf(
+        ax=ax[i],
+        levels=11,
+        lw=0.7,
+        vmin=vmin,
+        vmax=vmax,
+        add_colorbar=False,
+        cmap=cmap,
+        rasterized=True,
+        norm=norm,
+    )
+    # ax[i].clabel(cs, cs.levels, fontsize=7)
+    ax[i].format(
+        title="",
+    )
+
+fig.colorbar(cm, span=(2, 4), loc="b", width=0.1, label="Geopotential height [dm]", rasterized=True)
+
+ax.format(
+    coast=True,
+    reso="med",
+    latlim=(30, 90),
+    lonlim=(-70, 70),
+    suptitle="Daily average geopotential height anomaly at 500 hPa grouped by NAO-phase",
+    # rowlabels=["Negative", "Neutral", "Positive"],
+)
+```
+
+```{python}
+fig.savefig("anomalies_text.svg")
 ```

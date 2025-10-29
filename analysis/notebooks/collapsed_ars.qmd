@@ -579,7 +579,14 @@ def annual_average_plot(ar_ds, pr_ds, suptitle, ann_avg_precip_ds):
     vmax = np.ceil(pr_ds.max().values)
     cmap = plt.Colormap("oslo_r", right=0.8)
     cm = pr_ds.plot(
-        ax=axs[1], vmin=0, vmax=vmax, levels=11, cmap=cmap, add_colorbar=False, rasterized=True, robust=False
+        ax=axs[1],
+        vmin=0,
+        vmax=vmax,
+        levels=11,
+        cmap=cmap,
+        add_colorbar=False,
+        rasterized=True,
+        robust=False,
     )
     # cm = ar_ann_avg.plot(ax=axs[1], vmin=0, vmax=vmax, cmap="oslor_r", add_colorbar=False)
     axs[1].colorbar(cm, label="Total annual average\nprecipitation [mm]")
@@ -1839,7 +1846,7 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
         proj_kw={"central_longitude": 15},
         share=False,
     )
-    #vmax = ar_precip_ens_avg.tp.max().values
+    # vmax = ar_precip_ens_avg.tp.max().values
     cmap = plt.Colormap("oslo_r", right=0.8)
     for i in range(n_clusters):
         freq_data = ar_freqs.isel(label=i).ar_tracked_id * 100
@@ -1856,7 +1863,7 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
             width=0.15,
             # locator="multiple",
             # locator_kw={"base": 0.5},
-            extend="max"
+            extend="max",
         )
         curr_tp = ar_pr.isel(label=i).tp / ann_avg_precip_ds * 100
         cm = curr_tp.plot.pcolormesh(
@@ -1867,7 +1874,9 @@ def ar_cluster_plot(ar_freqs, ar_pr, suptitle):
             add_colorbar=False,
             # cbar_kwargs={"label": "Total precipitation\nfraction [%]"},
         )
-        axs[i, 1].colorbar(cm, label="Total precipitation\nfraction [%]", width=0.15,  extend="max")
+        axs[i, 1].colorbar(
+            cm, label="Total precipitation\nfraction [%]", width=0.15, extend="max"
+        )
         axs[i, 0].format(latlabels=True)
         if i == 3:
             axs[i, 0].format(latlabels=True, lonlabels=True)
@@ -2596,14 +2605,15 @@ nao_da = xr.DataArray(nao_series)
 # nao_bins = (-3.5, -0.5, 0, 0.5, 3.5)
 nao_bins = IntervalIndex(
     [
-    Interval(-3.501, -1.501),
-    Interval(-1.501, -0.501),
-    Interval(-0.501, 0.5),
-    Interval(0.5, 1.5),
-    Interval(1.5, 3.5),
-])
+        Interval(-3.501, -1.501),
+        Interval(-1.501, -0.501),
+        Interval(-0.501, 0.5),
+        Interval(0.5, 1.5),
+        Interval(1.5, 3.5),
+    ]
+)
 
-#hist, bins = nao_series.groupby(nao_bins)
+# hist, bins = nao_series.groupby(nao_bins)
 ```
 
 NAO seasonal plot.
@@ -2648,9 +2658,7 @@ ar_nao_groups = ar_ens_ds.groupby(
     nao=BinGrouper(nao_bins), label=UniqueGrouper(), ardt=UniqueGrouper()
 ).sum()
 
-ar_nao_groups_counts = precip_ds_nao.time.groupby(
-    nao=BinGrouper(nao_bins)
-).count()
+ar_nao_groups_counts = precip_ds_nao.time.groupby(nao=BinGrouper(nao_bins)).count()
 ```
 
 ```{python}
@@ -2770,6 +2778,232 @@ fig = nao_cluster_plot(freqs.min("ardt"), "NAO-grouped AR frequencies [Ensemble 
 fig.savefig("../../figures/nao_ar_clusters_ens_min.svg")
 ```
 
+### NAO cluster with geop anomalies
+
+```{python}
+daily_mean_ds = xr.open_zarr(
+    "/data/era5/geopotential/geopotential-daiy_mean-1979_2020.zarr/"
+).sel(valid_time=slice("1980", "2019"))
+```
+
+```{python}
+daily_mean_ds = daily_mean_ds.assign_coords(
+    {"nao": ("valid_time", nao_series.resample("1D").mean())}
+)
+```
+
+```{python}
+nao_geop_neutral = (
+    daily_mean_ds.groupby(nao=BinGrouper(nao_bins))
+    .mean()
+    .isel(pressure_level=0, nao_bins=2)
+    .compute()
+)
+```
+
+```{python}
+nao_geop_neutral = nao_geop_neutral.drop_vars("nao_bins")
+```
+
+```{python}
+nao_geop_anom = (
+    (daily_mean_ds - nao_geop_neutral)
+    .groupby(nao=BinGrouper(nao_bins))
+    .mean()
+    .isel(pressure_level=0)
+)
+```
+
+```{python}
+nao_geop_anom = nao_geop_anom.compute()
+```
+
+```{python}
+nao_geop_anom_sel = nao_geop_anom.sel(
+    latitude=slice(90, 10), longitude=slice(-130, 155)
+)
+```
+
+```{python}
+def nao_cluster_anom_plot(freqs, nao_geop, nao_geop_neutral, suptitle):
+    n_clusters = freqs.label.shape[0]
+    nrows = n_clusters + 1
+    ncols = 5
+    fig, axs = plt.subplots(
+        figwidth="12cm",
+        nrows=nrows,
+        ncols=ncols,
+        proj=nrows * ncols * ["lcc"],
+        proj_kw={"central_longitude": 15},
+        share=False,
+    )
+
+    vmax = np.round(freqs.ar_tracked_id.quantile(0.975).values, 1)
+    # vmax = 3
+    # print(vmax)
+
+    for i in range(n_clusters):
+        for j in range(5):
+            data = freqs.isel(label=i, nao_bins=j).ar_tracked_id
+            cm = data.plot(
+                ax=axs[i + 1, j],
+                rasterized=True,
+                vmin=0,
+                vmax=vmax,
+                add_colorbar=False,
+                cmap="bamako",
+            )
+            local_max = data.max().values
+            axs[i + 1, j].annotate(
+                f"Max: {local_max:.1f}",
+                (1, -0.1),
+                xycoords="axes fraction",
+                bbox={"boxstyle": "square", "facecolor": "white"},
+                ha="right",
+                va="bottom",
+            )
+    fig.colorbar(
+        cm,
+        label="AR frequency [%]",
+        width=0.1,
+        extend="max",
+        loc="b",
+        span=(2, 4),
+        # rows=(i+1, i+1),
+        rasterized=True,
+    )
+
+    for i in range(5):
+        if i == 2:
+            data = nao_geop_neutral.z / 98.2
+            vmin = 520  # data.min().values
+            vmax = 590  # data.max().values
+            cmap = plt.Colormap("batlow", left=0.2)
+            levels = 11
+            norm = None
+        else:
+            data = nao_geop.isel(nao_bins=i).z / 98.2
+            vmin = -25
+            vmax = 25
+            levels = np.asarray([-27, -22, -17, -12, -7, -2, 2, 7, 12, 17, 22, 27])
+            cmap = plt.Colormap("vik")
+            norm = plt.DivergingNorm(vcenter=0, vmin=vmin, vmax=vmax)
+
+        cm_tmp = (data).plot.contourf(
+            ax=axs[0, i],
+            levels=levels,
+            lw=0.4,
+            vmin=vmin,
+            vmax=vmax,
+            add_colorbar=False,
+            cmap=cmap,
+            rasterized=True,
+            norm=norm,
+        )
+        if i == 2:
+            cm = cm_tmp
+        # ax[i].clabel(cs, cs.levels, fontsize=7)
+        axs[0, i].format(
+            title="",
+        )
+
+    fig.colorbar(
+        cm,
+        span=(2, 4),
+        loc="b",
+        width=0.1,
+        # ticks=[-22, -11, 0, 11, 22],
+        label="Geopotential height [dm]",
+        rasterized=True,
+    )
+
+    # fig.colorbar(
+    #     cm_tmp,
+    #     span=(2, 4),
+    #     loc="b",
+    #     width=0.1,
+    #     #ticks=[-22, -11, 0, 11, 22],
+    #     label="Geopotential height anomaly [dm]",
+    #     rasterized=True,
+    # )
+
+    bin_labels = [
+        "NAO$\\mathbf{<-1.5}$",
+        "$\\mathbf{-1.5\\leq}$NAO$\\mathbf{<-0.5}$",
+        "$\\mathbf{-0.5\\leq}$NAO$\\mathbf{\\leq 0.5}$",
+        "$\\mathbf{0.5 <}$NAO$\\mathbf{\\leq 1.5}$",
+        "NAO$\\mathbf{>1.5}$",
+    ]
+
+    axs[5:].format(
+        coast=True,
+        reso="med",
+        coastlinewidth=0.4,
+        lonlim=LON_SLICE,
+        latlim=LAT_SLICE,
+        title="",
+    )
+
+    axs[:5].format(
+        coast=True,
+        reso="med",
+        coastlinewidth=0.4,
+        latlim=(30, 90),
+        lonlim=(-70, 70),
+        title="",
+        # rowlabels=[f"AR pathway {i}" for i in range(1, n_clusters + 1)],
+        # collabels=[f"{bin}" for bin in bin_labels],
+    )
+    axs.format(
+        rowlabels=["z500"] + [f"AR pathway {i}" for i in range(1, n_clusters + 1)],
+        collabels=[f"{bin}" for bin in bin_labels],
+        toplabelpad=0,
+        suptitle=suptitle,
+    )
+    return fig
+```
+
+```{python}
+fig = nao_cluster_anom_plot(
+    freqs.median("ardt"),
+    nao_geop_anom_sel,
+    nao_geop_neutral,
+    "NAO-grouped AR frequencies [Ensemble median]",
+)
+```
+
+```{python}
+fig.savefig("../../figures/nao_geop_ar_clusters_ens_med.svg")
+```
+
+#### Spread
+
+```{python}
+fig = nao_cluster_anom_plot(
+    freqs.min("ardt"),
+    nao_geop_anom_sel,
+    nao_geop_neutral,
+    "NAO-grouped AR frequencies [Ensemble min]",
+)
+```
+
+```{python}
+fig.savefig("../../figures/nao_geop_ar_clusters_ens_min.svg")
+```
+
+```{python}
+fig = nao_cluster_anom_plot(
+    freqs.max("ardt"),
+    nao_geop_anom_sel,
+    nao_geop_neutral,
+    "NAO-grouped AR frequencies [Ensemble max]",
+)
+```
+
+```{python}
+fig.savefig("../../figures/nao_geop_ar_clusters_ens_max.svg")
+```
+
 ## NAO-grouped AR frequency distributions
 
 ```{python}
@@ -2829,18 +3063,18 @@ def nao_dist_plot(freqs: xr.Dataset, title: str):
         ax[1].plot(np.arange(0.75, 11.5, 2.5), res[i], label=f"AR pathway {i+1}")
 
     handles, labels = ax[0].get_legend_handles_labels()
-    
+
     fig.legend(handles[::5], labels[::5], ncols=2, loc="b")
-    
+
     ax[0].format(ylabel="AR frequency [%]")
     ax[1].format(ylabel="Mean\nWasserstein distance")
-    
+
     bin_labels = [
         "NAO$<-1.5$",
         "$-1.5\\leq$NAO$<-0.5$",
         "$-0.5\\leq$NAO$\\leq 0.5$",
         "$0.5 <$NAO$\\leq 1.5$",
-        "$1.5<$NAO",
+        "NAO$>1.5$",
     ]
     ax.format(
         xticks=np.arange(0.75, 11.5, 2.5),
