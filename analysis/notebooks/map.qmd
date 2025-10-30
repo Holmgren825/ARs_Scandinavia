@@ -71,6 +71,7 @@ gpd.GeoSeries(
 ax.annotate(
     "Sweden",
     (13, 62),
+    weight="bold",
     rotation=45,
     xycoords="data",
     transform=ccrs.PlateCarree(),
@@ -78,6 +79,7 @@ ax.annotate(
 ax.annotate(
     "Norway",
     (6.5, 59),
+    weight="bold",
     rotation=45,
     xycoords="data",
     transform=ccrs.PlateCarree(),
@@ -85,15 +87,20 @@ ax.annotate(
 ax.annotate(
     "Finland",
     (23, 62),
+    weight="bold",
     rotation=10,
     xycoords="data",
     transform=ccrs.PlateCarree(),
 )
 arrowprops = {"arrowstyle": "simple", "fc": "k", "ec": "white", "lw": 0.3}
 bbox = {"facecolor": "white", "alpha": 0.8}
+
+color = "blue9"
+
 ax.annotate(
     "Denmark",
     (10, 56),
+    weight="bold",
     rotation=0,
     xytext=(-1, 54),
     xycoords="data",
@@ -107,6 +114,8 @@ ax.annotate(
     "Skagerrak Strait",
     (10, 58.5),
     rotation=0,
+    color=color,
+    #weight="bold",
     xytext=(19, 54),
     xycoords="data",
     transform=ccrs.PlateCarree(),
@@ -119,7 +128,9 @@ ax.annotate(
     "Baltic Sea",
     (20, 59),
     rotation=0,
-    xytext=(25, 57.5),
+    color=color,
+    #weight="bold",
+    xytext=(24.5, 57.5),
     xycoords="data",
     transform=ccrs.PlateCarree(),
     arrowprops=arrowprops,
@@ -131,6 +142,8 @@ ax.annotate(
     "North Sea",
     (2, 57.5),
     rotation=0,
+    color=color,
+    #weight="bold",
     xytext=(-6, 62),
     xycoords="data",
     transform=ccrs.PlateCarree(),
@@ -147,7 +160,7 @@ ax.format(
     land=True,
     borders=True,
     landcolor="bisque",
-    facecolor="ocean blue",
+    facecolor="blue2",
     latlabels=True,
     lonlabels=True,
     lonlim=(-4, 32),
@@ -159,3 +172,4 @@ ax.format(
 ```{python}
 fig.savefig("../../figures/scandi_map.svg")
 ```
+
