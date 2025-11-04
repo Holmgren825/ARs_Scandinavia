@@ -1214,6 +1214,20 @@ for ardt_ts in ar_ts_trend.values.T:
 np.median(np.asarray(mk_res_avg), axis=0)
 ```
 
+Get the time series ranges.
+
+```{python}
+ar_ts_trend.median("ardt").quantile([0.025, 0.975])
+```
+
+```{python}
+ar_ts_trend.max("ardt").quantile([0.025, 0.975])
+```
+
+```{python}
+ar_ts_trend.min("ardt").quantile([0.025, 0.975])
+```
+
 ```{python}
 bar_colors = plt.get_colors("tab20c")[:4]
 fig, ax = plt.subplots(figheight="6cm", figwidth="12cm")
@@ -2885,7 +2899,8 @@ def nao_cluster_anom_plot(freqs, nao_geop, nao_geop_neutral, suptitle):
             data = nao_geop.isel(nao_bins=i).z / 98.2
             vmin = -25
             vmax = 25
-            levels = np.asarray([-27, -22, -17, -12, -7, -2, 2, 7, 12, 17, 22, 27])
+            #levels = np.asarray([-27, -22, -17, -12, -7, -2, 2, 7, 12, 17, 22, 27])
+            levels = [-25, -20, -15, -10, -5, 5, 10, 15, 20, 25]
             cmap = plt.Colormap("vik")
             norm = plt.DivergingNorm(vcenter=0, vmin=vmin, vmax=vmax)
 
@@ -2934,6 +2949,29 @@ def nao_cluster_anom_plot(freqs, nao_geop, nao_geop_neutral, suptitle):
         "$\\mathbf{0.5 <}$NAO$\\mathbf{\\leq 1.5}$",
         "NAO$\\mathbf{>1.5}$",
     ]
+    axs[0, 2].annotate(
+        "Average",
+        (0.5, -0.25),
+        xycoords="axes fraction",
+        ha="center",
+        va="bottom",
+    )
+    
+    axs[0, 1].annotate(
+        "Anomalies",
+        (0.5, -0.25),
+        xycoords="axes fraction",
+        ha="center",
+        va="bottom",
+    )
+    
+    axs[0, 3].annotate(
+        "Anomalies",
+        (0.5, -0.25),
+        xycoords="axes fraction",
+        ha="center",
+        va="bottom",
+    )
 
     axs[5:].format(
         coast=True,
@@ -3116,4 +3154,3 @@ fig = nao_dist_plot(
 ```{python}
 fig.savefig("../../figures/nao_ar_freq_distributions_ens_max.svg")
 ```
-
